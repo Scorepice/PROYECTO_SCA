@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCA CORPOELEC - Sistema Modular</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="fondo-decorativo" aria-hidden="true"></div>
+
+    <header id="app-header" class="topbar hidden">
+        <div class="brand">
+            <img src="imagen.png" alt="Logo CORPOELEC" class="brand-logo">
+            <div>
+                <h1>SCA CORPOELEC</h1>
+                <p>Sistema de Control de Acceso</p>
+            </div>
+        </div>
+        <nav id="menu-principal" class="menu"></nav>
+        <button id="btn-cerrar-sesion" class="btn btn-danger">Cerrar sesion</button>
+    </header>
+
+    <main class="layout">
+        <section id="screen-login" class="screen"></section>
+        <section id="screen-dashboard" class="screen hidden"></section>
+        <section id="screen-empleados" class="screen hidden"></section>
+        <section id="screen-asistencia" class="screen hidden"></section>
+        <section id="screen-reportes" class="screen hidden"></section>
+    </main>
+
+    <template id="tpl-login">
+        <article class="panel login-grid">
+            <aside class="login-hero">
+                <img src="imagen.png" alt="CORPOELEC" class="hero-logo">
+                <h2>Acceso administrativo</h2>
+                <p>Gestiona personal, asistencia y reportes con una estructura preparada para crecer.</p>
+                <img src="kilovatico.jpg" alt="Kilovatico" class="hero-mascota">
+            </aside>
+            <form id="form-login" class="form-card">
+                <h3>Inicio de sesion</h3>
+                <label class="field">
+                    <span>Usuario</span>
+                    <input id="login-user" type="text" required>
+                </label>
+                <label class="field">
+                    <span>Clave</span>
+                    <input id="login-pass" type="password" required>
+                </label>
+                <button class="btn btn-primary" type="submit">Ingresar</button>
+                <p id="login-feedback" class="feedback"></p>
+            </form>
+        </article>
+    </template>
+
+    <template id="tpl-dashboard">
+        <article class="panel">
+            <div class="panel-head">
+                <h2>Panel de control</h2>
+                <p>Indicadores en tiempo real de la sede activa</p>
+            </div>
+            <div id="metricas-dashboard" class="metric-grid"></div>
+            <section class="dashboard-extra">
+                <article class="dashboard-card dashboard-card-wide">
+                    <h3>Tendencia ultimos 7 dias</h3>
+                    <p>Entradas y salidas por dia</p>
+                    <div id="dashboard-chart-weekly" class="week-bars"></div>
+                </article>
+                <article class="dashboard-card">
+                    <h3>Resumen diario</h3>
+                    <p>Comparativo de movimientos del dia</p>
+                    <div id="dashboard-chart" class="dashboard-chart"></div>
+                </article>
+                <article class="dashboard-card">
+                    <h3>Entradas recientes</h3>
+                    <ul id="dashboard-entradas" class="dashboard-list"></ul>
+                </article>
+                <article class="dashboard-card">
+                    <h3>Salidas recientes</h3>
+                    <ul id="dashboard-salidas" class="dashboard-list"></ul>
+                </article>
+            </section>
+        </article>
+    </template>
+
+    <template id="tpl-empleados">
+        <article class="panel split">
+            <form id="form-empleado" class="form-card">
+                <h2>Registro de empleado</h2>
+                <input name="originalCedula" type="hidden">
+                <label class="field">
+                    <span>Nombre completo</span>
+                    <input name="nombre" type="text" required>
+                </label>
+                <label class="field">
+                    <span>Cedula</span>
+                    <input name="cedula" type="text" required>
+                </label>
+                <label class="field">
+                    <span>Carnet</span>
+                    <input name="carnet" type="text" required>
+                </label>
+                <label class="field">
+                    <span>Departamento</span>
+                    <select name="departamento" id="departamento-select" required></select>
+                </label>
+                <label class="field">
+                    <span>Cargo</span>
+                    <input name="cargo" type="text" required>
+                </label>
+                <div class="report-actions">
+                    <button id="btn-guardar-empleado" class="btn btn-primary" type="submit">Guardar</button>
+                    <button id="btn-cancelar-edicion-empleado" class="btn btn-ghost hidden" type="button">Cancelar
+                        edicion</button>
+                </div>
+                <p id="empleado-feedback" class="feedback"></p>
+            </form>
+            <div class="table-card">
+                <div class="table-head">
+                    <h3>Listado de empleados</h3>
+                    <button id="btn-limpiar-empleados" class="btn btn-ghost" type="button">Limpiar</button>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Cedula</th>
+                                <th>Carnet</th>
+                                <th>Nombre</th>
+                                <th>Departamento</th>
+                                <th>Cargo</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-empleados"></tbody>
+                    </table>
+                </div>
+            </div>
+        </article>
+    </template>
+
+    <template id="tpl-asistencia">
+        <article class="panel">
+            <div class="panel-head">
+                <h2>Terminal de asistencia</h2>
+                <p id="reloj-digital" class="clock">00:00:00</p>
+            </div>
+            <div class="action-grid">
+                <label class="field field-wide">
+                    <span>Carnet (empleado) o cedula (invitado)</span>
+                    <input id="asistencia-identificador" type="text"
+                        placeholder="Carnet para empleado / Cedula para invitado" required>
+                </label>
+                <button data-tipo="ENTRADA" class="btn btn-success" type="button">Marcar entrada</button>
+                <button data-tipo="SALIDA" class="btn btn-danger" type="button">Marcar salida</button>
+            </div>
+            <p id="asistencia-feedback" class="feedback"></p>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Hora</th>
+                            <th>Registro</th>
+                            <th>Cedula</th>
+                            <th>Carnet</th>
+                            <th>Medio</th>
+                            <th>Tipo</th>
+                            <th>Observacion</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-asistencia"></tbody>
+                </table>
+            </div>
+        </article>
+    </template>
+
+    <template id="tpl-reportes">
+        <article class="panel">
+            <div class="panel-head">
+                <h2>Reportes</h2>
+                <p>Exportacion simple para futuras integraciones</p>
+            </div>
+            <div class="report-actions">
+                <button id="btn-exportar-empleados-excel" class="btn btn-excel" type="button">Exportar empleados
+                    Excel</button>
+                <button id="btn-exportar-asistencia-excel" class="btn btn-excel" type="button">Exportar asistencia
+                    Excel</button>
+                <button id="btn-exportar-empleados-pdf" class="btn btn-pdf" type="button">Exportar empleados
+                    PDF</button>
+                <button id="btn-exportar-asistencia-pdf" class="btn btn-pdf" type="button">Exportar asistencia
+                    PDF</button>
+            </div>
+            <pre id="reporte-preview" class="preview"></pre>
+        </article>
+    </template>
+
+    <noscript>Este sistema requiere JavaScript para funcionar.</noscript>
+
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>
