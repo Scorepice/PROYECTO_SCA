@@ -470,30 +470,35 @@ function renderDashboard() {
     const blocks = [
         {
             label: 'Personal activo',
-            value: metricas.personal_activo
+            value: metricas.personal_activo,
+            accent: '#173f73'
         },
         {
             label: 'Entradas hoy',
-            value: metricas.entradas_hoy
+            value: metricas.entradas_hoy,
+            accent: '#177f4b'
         },
         {
             label: 'Salidas hoy',
-            value: metricas.salidas_hoy
+            value: metricas.salidas_hoy,
+            accent: '#d3202f'
         },
         {
             label: 'Marcaciones hoy',
-            value: metricas.marcaciones_hoy
+            value: metricas.marcaciones_hoy,
+            accent: '#2a6bc8'
         },
         {
             label: 'Invitados hoy',
-            value: invitadosHoy
+            value: invitadosHoy,
+            accent: '#d68a00'
         }
     ];
 
     document.getElementById('metricas-dashboard').innerHTML = blocks
         .map(
             (metrica) => `
-                <article class="metric">
+                <article class="metric" style="--metric-accent:${metrica.accent};">
                     <p>${metrica.label}</p>
                     <h3>${metrica.value}</h3>
                 </article>`
@@ -512,18 +517,20 @@ function renderDashboardWeeklyChart() {
     }
 
     const trend = buildLast7DaysTrend();
-    const maxValue = Math.max(1, ...trend.flatMap((item) => [item.entradas, item.salidas]));
+    const maxValue = Math.max(1, ...trend.flatMap((item) => [item.entradas, item.salidas, item.invitados]));
 
     chart.innerHTML = trend
         .map((item) => {
             const entradasHeight = Math.max(6, Math.round((item.entradas / maxValue) * 72));
             const salidasHeight = Math.max(6, Math.round((item.salidas / maxValue) * 72));
+            const invitadosHeight = Math.max(6, Math.round((item.invitados / maxValue) * 72));
 
             return `
                 <article class="week-day">
                     <div class="week-bars-pair">
                         <span class="week-bar week-bar-entrada" style="height:${entradasHeight}px" title="Entradas: ${item.entradas}"></span>
                         <span class="week-bar week-bar-salida" style="height:${salidasHeight}px" title="Salidas: ${item.salidas}"></span>
+                        <span class="week-bar week-bar-invitado" style="height:${invitadosHeight}px" title="Invitados: ${item.invitados}"></span>
                     </div>
                     <small>${escapeHtml(item.label)}</small>
                 </article>`;
@@ -543,7 +550,8 @@ function buildLast7DaysTrend() {
             key: formatDate(date),
             label: date.toLocaleDateString('es-VE', { weekday: 'short' }),
             entradas: 0,
-            salidas: 0
+            salidas: 0,
+            invitados: 0
         });
     }
 
@@ -561,6 +569,10 @@ function buildLast7DaysTrend() {
 
         if (registro.tipo === 'SALIDA') {
             item.salidas += 1;
+        }
+
+        if ((registro.tipo_registro || 'EMPLEADO') === 'INVITADO') {
+            item.invitados += 1;
         }
     });
 
@@ -626,12 +638,13 @@ function buildDashboardListItems(registros, emptyMessage) {
                 ? `Invitado ${registro.cedula || '-'}`
                 : `Carnet ${registro.carnet || '-'} / Cedula ${registro.cedula || '-'}`;
             const detail = registro.observacion || registro.medio_identificacion || tipoRegistro;
+            const badgeClass = tipoRegistro === 'INVITADO' ? 'badge-guest' : (registro.medio_identificacion === 'CEDULA' ? 'badge-id' : 'badge-employee');
 
             return `
                 <li class="dashboard-item">
                     <div>
                         <strong>${escapeHtml(persona)}</strong>
-                        <span>${escapeHtml(detail)}</span>
+                        <span class="${badgeClass}">${escapeHtml(detail)}</span>
                     </div>
                     <small>${escapeHtml(registro.fecha || '-')} ${escapeHtml(registro.hora || '-')}</small>
                 </li>`;

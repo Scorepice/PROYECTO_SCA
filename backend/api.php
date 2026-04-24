@@ -12,6 +12,7 @@ $action = $_GET['action'] ?? '';
 
 try {
     $pdo = db_connection();
+    ensure_schema($pdo);
 
     if ($method === 'GET' && $action === 'bootstrap') {
         json_response(200, [
@@ -368,4 +369,76 @@ function json_response(int $statusCode, array $payload): void
     http_response_code($statusCode);
     echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
+}
+
+function ensure_schema(PDO $pdo): void
+{
+    ensure_column($pdo, 'empleados', 'carnet', 'VARCHAR(30) NULL AFTER cedula');
+    ensure_unique_index($pdo, 'empleados', 'uk_empleados_carnet', 'carnet');
+
+    ensure_column($pdo, 'asistencias', 'carnet', 'VARCHAR(30) NULL AFTER cedula');
+    ensure_column($pdo, 'asistencias', 'tipo_registro', "ENUM('EMPLEADO', 'INVITADO') NOT NULL DEFAULT 'EMPLEADO' AFTER carnet");
+    ensure_column($pdo, 'asistencias', 'cedula_invitado', 'VARCHAR(20) NULL AFTER tipo_registro');
+    ensure_column($pdo, 'asistencias', 'medio_identificacion', "ENUM('CARNET', 'CEDULA', 'INVITADO') NULL AFTER cedula_invitado");
+    ensure_column($pdo, 'asistencias', 'observacion', 'VARCHAR(255) NULL AFTER medio_identificacion');
+    ensure_index($pdo, 'asistencias', 'idx_asistencias_carnet', 'carnet');
+    ensure_index($pdo, 'asistencias', 'idx_asistencias_tipo_registro', 'tipo_registro');
+    ensure_index($pdo, 'asistencias', 'idx_asistencias_cedula_invitado', 'cedula_invitado');
+
+    $pdo->exec("UPDATE empleados SET carnet = cedula WHERE carnet IS NULL OR carnet = ''");
+    $pdo->exec("UPDATE asistencias SET medio_identificacion = IF(tipo_registro = 'INVITADO', 'INVITADO', IF(carnet IS NOT NULL AND carnet <> '', 'CARNET', 'CEDULA')) WHERE medio_identificacion IS NULL");
+    $pdo->exec("UPDATE asistencias SET observacion = 'Ingreso de invitado' WHERE tipo_registro = 'INVITADO' AND (observacion IS NULL OR observacion = '')");
+}
+
+function ensure_column(PDO $pdo, string $table, string $column, string $definition): void
+{
+    if (column_exists($pdo, $table, $column)) {
+        return;
+    }
+
+    $pdo->exec(sprintf('ALTER TABLE %s ADD COLUMN %s %s', $table, $column, $definition));
+}
+
+function ensure_index(PDO $pdo, string $table, string $indexName, string $column): void
+{
+    if (index_exists($pdo, $table, $indexName)) {
+        return;
+    }
+
+    $pdo->exec(sprintf('ALTER TABLE %s ADD INDEX %s (%s)', $table, $indexName, $column));
+}
+
+function ensure_unique_index(PDO $pdo, string $table, string $indexName, string $column): void
+{
+    if (index_exists($pdo, $table, $indexName)) {
+        return;
+    }
+
+    $pdo->exec(sprintf('ALTER TABLE %s ADD UNIQUE INDEX %s (%s)', $table, $indexName, $column));
+}
+
+function column_exists(PDO $pdo, string $table, string $column): bool
+{
+    $stmt = $pdo->prepare(
+        'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name AND COLUMN_NAME = :column_name'
+    );
+    $stmt->execute([
+        ':table_name' => $table,
+        ':column_name' => $column
+    ]);
+
+    return (int) $stmt->fetchColumn() > 0;
+}
+
+function index_exists(PDO $pdo, string $table, string $indexName): bool
+{
+    $stmt = $pdo->prepare(
+        'SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name AND INDEX_NAME = :index_name'
+    );
+    $stmt->execute([
+        ':table_name' => $table,
+        ':index_name' => $indexName
+    ]);
+
+    return (int) $stmt->fetchColumn() > 0;
 }
