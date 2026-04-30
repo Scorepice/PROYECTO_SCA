@@ -28,6 +28,7 @@
         <section id="screen-dashboard" class="screen hidden"></section>
         <section id="screen-empleados" class="screen hidden"></section>
         <section id="screen-asistencia" class="screen hidden"></section>
+        <section id="screen-archivo" class="screen hidden"></section>
         <section id="screen-reportes" class="screen hidden"></section>
     </main>
 
@@ -36,7 +37,7 @@
             <aside class="login-hero">
                 <img src="imagen.png" alt="CORPOELEC" class="hero-logo">
                 <h2>Acceso administrativo</h2>
-                <p>Gestiona personal, asistencia y reportes con una estructura preparada para crecer.</p>
+                <p>Gestion de personal, asistencia y reportes con una estructura.</p>
                 <img src="kilovatico.jpg" alt="Kilovatico" class="hero-mascota">
             </aside>
             <form id="form-login" class="form-card">
@@ -153,8 +154,32 @@
                     <input id="asistencia-identificador" type="text"
                         placeholder="Carnet para empleado / Cedula para invitado" required>
                 </label>
-                <button data-tipo="ENTRADA" class="btn btn-success" type="button">Marcar entrada</button>
-                <button data-tipo="SALIDA" class="btn btn-danger" type="button">Marcar salida</button>
+                <div id="asistencia-invitado-fields" class="hidden">
+                    <label class="field field-wide">
+                        <span>Departamento que busca el invitado</span>
+                        <select id="asistencia-departamento"></select>
+                    </label>
+                    <label class="field field-wide">
+                        <span>Persona que busca</span>
+                        <select id="asistencia-persona"></select>
+                    </label>
+                </div>
+                <label class="field field-compact field-full">
+                    <span>Observacion</span>
+                    <select id="asistencia-observacion">
+                        <option value="">Sin observacion</option>
+                        <option value="Firma de papeles">Firma de papeles</option>
+                        <option value="Entrega de documentos">Entrega de documentos</option>
+                        <option value="Reunion">Reunion</option>
+                        <option value="Otro">Otro</option>
+                    </select>
+                    <input id="asistencia-observacion-otro" class="hidden" type="text" maxlength="80"
+                        placeholder="Especificar observación" style="width:180px; margin-top:6px;">
+                </label>
+                <div class="attendance-actions">
+                    <button data-tipo="ENTRADA" class="btn btn-success" type="button">Marcar entrada</button>
+                    <button data-tipo="SALIDA" class="btn btn-danger" type="button">Marcar salida</button>
+                </div>
             </div>
             <p id="asistencia-feedback" class="feedback"></p>
             <div class="table-wrap">
@@ -169,6 +194,8 @@
                             <th>Medio</th>
                             <th>Tipo</th>
                             <th>Observacion</th>
+                            <th>Departamento buscado</th>
+                            <th>Persona buscada</th>
                         </tr>
                     </thead>
                     <tbody id="tabla-asistencia"></tbody>
@@ -177,23 +204,97 @@
         </article>
     </template>
 
-    <template id="tpl-reportes">
-        <article class="panel">
+    <template id="tpl-archivo">
+        <article class="panel archive-panel">
             <div class="panel-head">
-                <h2>Reportes</h2>
-                <p>Exportacion simple para futuras integraciones</p>
+                <div>
+                    <h2>Archivo de asistencia</h2>
+                    <p>Los registros del dia anterior se mueven aqui automaticamente para no saturar la pantalla
+                        principal.</p>
+                </div>
+                <button id="btn-actualizar-archivo" class="btn btn-ghost" type="button">Sincronizar archivo</button>
             </div>
-            <div class="report-actions">
-                <button id="btn-exportar-empleados-excel" class="btn btn-excel" type="button">Exportar empleados
-                    Excel</button>
-                <button id="btn-exportar-asistencia-excel" class="btn btn-excel" type="button">Exportar asistencia
-                    Excel</button>
-                <button id="btn-exportar-empleados-pdf" class="btn btn-pdf" type="button">Exportar empleados
-                    PDF</button>
-                <button id="btn-exportar-asistencia-pdf" class="btn btn-pdf" type="button">Exportar asistencia
-                    PDF</button>
+            <div class="archive-summary" id="archivo-resumen"></div>
+            <p id="archivo-feedback" class="feedback"></p>
+            <div class="table-wrap archive-table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Hora</th>
+                            <th>Registro</th>
+                            <th>Cedula</th>
+                            <th>Carnet</th>
+                            <th>Medio</th>
+                            <th>Tipo</th>
+                            <th>Observacion</th>
+                            <th>Departamento buscado</th>
+                            <th>Persona buscada</th>
+                            <th>Archivado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-archivo"></tbody>
+                </table>
             </div>
-            <pre id="reporte-preview" class="preview"></pre>
+        </article>
+    </template>
+
+    <template id="tpl-reportes">
+        <article class="panel reports-panel">
+            <div class="panel-head">
+                <div>
+                    <h2>Reportes</h2>
+                    <p>Vista previa antes de descargar y filtros visuales para revisar el contenido</p>
+                </div>
+                <div class="report-badges">
+                    <span class="badge badge-blue">Vista previa</span>
+                    <span class="badge badge-green">Excel</span>
+                    <span class="badge badge-red">PDF</span>
+                </div>
+            </div>
+            <div class="report-toolbar">
+                <div class="report-switches">
+                    <button id="btn-previa-empleados" class="btn btn-primary" type="button">Vista previa
+                        empleados</button>
+                    <button id="btn-previa-asistencia" class="btn btn-primary" type="button">Vista previa
+                        asistencia</button>
+                </div>
+                <div class="report-actions">
+                    <button id="btn-descargar-excel" class="btn btn-excel" type="button" disabled>Descargar
+                        Excel</button>
+                    <button id="btn-descargar-pdf" class="btn btn-pdf" type="button" disabled>Descargar PDF</button>
+                </div>
+            </div>
+            <div class="report-summary">
+                <article>
+                    <span>Reporte activo</span>
+                    <strong id="reporte-activo-nombre">Sin seleccionar</strong>
+                </article>
+                <article>
+                    <span>Registros</span>
+                    <strong id="reporte-activo-total">0</strong>
+                </article>
+                <article>
+                    <span>Última actualización</span>
+                    <strong id="reporte-activo-fecha">--</strong>
+                </article>
+            </div>
+            <div class="report-preview-shell">
+                <div class="report-preview-head">
+                    <div>
+                        <h3 id="reporte-preview-titulo">Vista previa del reporte</h3>
+                        <p id="reporte-preview-subtitulo">Selecciona un reporte para ver los datos antes de descargar.
+                        </p>
+                    </div>
+                    <small id="reporte-preview-meta">0 filas visibles</small>
+                </div>
+                <div class="table-wrap report-table-wrap">
+                    <table class="report-table">
+                        <thead id="reporte-preview-head"></thead>
+                        <tbody id="reporte-preview-body"></tbody>
+                    </table>
+                </div>
+            </div>
         </article>
     </template>
 

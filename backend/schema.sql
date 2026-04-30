@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS asistencias (
     cedula_invitado VARCHAR(20) NULL,
     medio_identificacion ENUM('CARNET', 'CEDULA', 'INVITADO') NULL,
     observacion VARCHAR(255) NULL,
+    departamento_buscado VARCHAR(120) NULL,
+    persona_buscada VARCHAR(120) NULL,
     tipo ENUM('ENTRADA', 'SALIDA') NOT NULL,
     fecha DATE NOT NULL,
     hora TIME NOT NULL,
@@ -57,6 +59,28 @@ CREATE TABLE IF NOT EXISTS asistencias (
         ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS asistencias_archivadas (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    origen_asistencia_id BIGINT UNSIGNED NOT NULL,
+    cedula VARCHAR(20) NULL,
+    carnet VARCHAR(30) NULL,
+    tipo_registro ENUM('EMPLEADO', 'INVITADO') NOT NULL DEFAULT 'EMPLEADO',
+    cedula_invitado VARCHAR(20) NULL,
+    medio_identificacion ENUM('CARNET', 'CEDULA', 'INVITADO') NULL,
+    observacion VARCHAR(255) NULL,
+    departamento_buscado VARCHAR(120) NULL,
+    persona_buscada VARCHAR(120) NULL,
+    tipo ENUM('ENTRADA', 'SALIDA') NOT NULL,
+    fecha DATE NOT NULL,
+    hora TIME NOT NULL,
+    archivado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_asistencias_archivadas_origen (origen_asistencia_id),
+    KEY idx_asistencias_archivadas_fecha (fecha),
+    KEY idx_asistencias_archivadas_tipo_registro (tipo_registro),
+    KEY idx_asistencias_archivadas_cedula_invitado (cedula_invitado)
+) ENGINE=InnoDB;
+
 ALTER TABLE empleados ADD COLUMN IF NOT EXISTS carnet VARCHAR(30) NULL AFTER cedula;
 UPDATE empleados SET carnet = cedula WHERE carnet IS NULL OR carnet = '';
 ALTER TABLE empleados MODIFY carnet VARCHAR(30) NOT NULL;
@@ -67,6 +91,8 @@ ALTER TABLE asistencias ADD COLUMN IF NOT EXISTS tipo_registro ENUM('EMPLEADO', 
 ALTER TABLE asistencias ADD COLUMN IF NOT EXISTS cedula_invitado VARCHAR(20) NULL AFTER tipo_registro;
 ALTER TABLE asistencias ADD COLUMN IF NOT EXISTS medio_identificacion ENUM('CARNET', 'CEDULA', 'INVITADO') NULL AFTER cedula_invitado;
 ALTER TABLE asistencias ADD COLUMN IF NOT EXISTS observacion VARCHAR(255) NULL AFTER medio_identificacion;
+ALTER TABLE asistencias ADD COLUMN IF NOT EXISTS departamento_buscado VARCHAR(120) NULL AFTER observacion;
+ALTER TABLE asistencias ADD COLUMN IF NOT EXISTS persona_buscada VARCHAR(120) NULL AFTER departamento_buscado;
 UPDATE asistencias a
 INNER JOIN empleados e ON e.cedula = a.cedula
 SET a.carnet = e.carnet
@@ -77,6 +103,11 @@ WHERE medio_identificacion IS NULL;
 UPDATE asistencias
 SET observacion = 'Ingreso de invitado'
 WHERE tipo_registro = 'INVITADO' AND (observacion IS NULL OR observacion = '');
+ALTER TABLE asistencias MODIFY departamento_buscado VARCHAR(120) NULL;
+ALTER TABLE asistencias MODIFY persona_buscada VARCHAR(120) NULL;
+
+ALTER TABLE asistencias_archivadas ADD COLUMN IF NOT EXISTS departamento_buscado VARCHAR(120) NULL AFTER observacion;
+ALTER TABLE asistencias_archivadas ADD COLUMN IF NOT EXISTS persona_buscada VARCHAR(120) NULL AFTER departamento_buscado;
 ALTER TABLE asistencias MODIFY cedula VARCHAR(20) NULL;
 ALTER TABLE asistencias MODIFY carnet VARCHAR(30) NULL;
 ALTER TABLE asistencias ADD INDEX IF NOT EXISTS idx_asistencias_carnet (carnet);
@@ -106,3 +137,31 @@ ON DUPLICATE KEY UPDATE
     nombre = VALUES(nombre),
     departamento = VALUES(departamento),
     cargo = VALUES(cargo);
+
+INSERT IGNORE INTO asistencias_archivadas (
+    origen_asistencia_id,
+    cedula,
+    carnet,
+    tipo_registro,
+    cedula_invitado,
+    medio_identificacion,
+    observacion,
+    tipo,
+    fecha,
+    hora
+)
+SELECT
+    a.id,
+    a.cedula,
+    a.carnet,
+    a.tipo_registro,
+    a.cedula_invitado,
+    a.medio_identificacion,
+    a.observacion,
+    a.tipo,
+    a.fecha,
+    a.hora
+FROM asistencias a
+WHERE a.fecha < CURDATE();
+
+DELETE FROM asistencias WHERE fecha < CURDATE();

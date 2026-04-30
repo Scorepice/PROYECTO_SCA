@@ -13,6 +13,7 @@ $action = $_GET['action'] ?? '';
 try {
     $pdo = db_connection();
     ensure_schema($pdo);
+    archive_expired_attendance($pdo);
 
     if ($method === 'GET' && $action === 'bootstrap') {
         json_response(200, [
@@ -51,6 +52,14 @@ try {
         json_response(200, [
             'ok' => true,
             'message' => 'Acceso correcto.'
+        ]);
+    }
+
+    if ($method === 'POST' && $action === 'archive_sync') {
+        json_response(200, [
+            'ok' => true,
+            'message' => 'Archivo sincronizado correctamente.',
+            'data' => get_bootstrap_data($pdo)
         ]);
     }
 
@@ -141,6 +150,11 @@ try {
         $identificador = strtoupper(normalize_text($payload['identificador']));
         validate_identifier($identificador);
         $tipo = strtoupper(normalize_text($payload['tipo']));
+        $observacionManual = trim((string) ($payload['observacion'] ?? ''));
+        $departamentoBuscado = trim((string) ($payload['departamento_buscado'] ?? ''));
+        $personaBuscada = trim((string) ($payload['persona_buscada'] ?? ''));
+        validate_observacion($observacionManual);
+        validate_guest_context($departamentoBuscado, $personaBuscada);
 
         if (!in_array($tipo, ['ENTRADA', 'SALIDA'], true)) {
             json_response(422, [
@@ -163,12 +177,16 @@ try {
         $hora = date('H:i:s');
 
         if ($empleado) {
-            $medio = $empleadoPorCarnet ? 'CARNET' : 'CEDULA';
-            $observacion = $medio === 'CEDULA'
-                ? ($tipo === 'ENTRADA' ? 'Ingreso sin carnet' : 'Marcaje sin carnet')
-                : null;
+            $ultimoMarcaje = get_last_attendance_for_employee($pdo, (string) $empleado['cedula']);
+            enforce_alternating_mark($ultimoMarcaje, $tipo, 'empleado');
 
-            $insert = $pdo->prepare('INSERT INTO asistencias (cedula, carnet, tipo_registro, cedula_invitado, medio_identificacion, observacion, tipo, fecha, hora) VALUES (:cedula, :carnet, :tipo_registro, :cedula_invitado, :medio_identificacion, :observacion, :tipo, :fecha, :hora)');
+            $medio = $empleadoPorCarnet ? 'CARNET' : 'CEDULA';
+            $observacionBase = $medio === 'CEDULA'
+                ? ($tipo === 'ENTRADA' ? 'Ingreso sin carnet' : 'Salida sin carnet')
+                : '';
+            $observacion = compose_observacion($observacionBase, $observacionManual);
+
+            $insert = $pdo->prepare('INSERT INTO asistencias (cedula, carnet, tipo_registro, cedula_invitado, medio_identificacion, observacion, departamento_buscado, persona_buscada, tipo, fecha, hora) VALUES (:cedula, :carnet, :tipo_registro, :cedula_invitado, :medio_identificacion, :observacion, :departamento_buscado, :persona_buscada, :tipo, :fecha, :hora)');
             $insert->execute([
                 ':cedula' => $empleado['cedula'],
                 ':carnet' => $empleado['carnet'],
@@ -176,6 +194,8 @@ try {
                 ':cedula_invitado' => null,
                 ':medio_identificacion' => $medio,
                 ':observacion' => $observacion,
+                ':departamento_buscado' => null,
+                ':persona_buscada' => null,
                 ':tipo' => $tipo,
                 ':fecha' => $fecha,
                 ':hora' => $hora
@@ -190,21 +210,49 @@ try {
 
         validate_guest_cedula($identificador);
 
-        if ($tipo !== 'ENTRADA') {
+        $ultimoMarcajeInvitado = get_last_attendance_for_guest($pdo, $identificador);
+        enforce_alternating_mark($ultimoMarcajeInvitado, $tipo, 'invitado');
+
+        if ($tipo === 'ENTRADA' && ($departamentoBuscado === '' || $personaBuscada === '')) {
             json_response(422, [
                 'ok' => false,
-                'message' => 'Para invitados solo se permite ENTRADA con cedula.'
+                'message' => 'Para un invitado debes indicar el departamento y la persona que busca.'
             ]);
         }
 
-        $insert = $pdo->prepare('INSERT INTO asistencias (cedula, carnet, tipo_registro, cedula_invitado, medio_identificacion, observacion, tipo, fecha, hora) VALUES (:cedula, :carnet, :tipo_registro, :cedula_invitado, :medio_identificacion, :observacion, :tipo, :fecha, :hora)');
+        if ($tipo === 'ENTRADA') {
+            $stmtPersona = $pdo->prepare('SELECT cedula, nombre, departamento FROM empleados WHERE cedula = :cedula LIMIT 1');
+            $stmtPersona->execute([':cedula' => $personaBuscada]);
+            $personaRegistrada = $stmtPersona->fetch();
+
+            if (!$personaRegistrada) {
+                json_response(422, [
+                    'ok' => false,
+                    'message' => 'La persona seleccionada no esta registrada en la base de datos.'
+                ]);
+            }
+
+            if ((string) $personaRegistrada['departamento'] !== $departamentoBuscado) {
+                json_response(422, [
+                    'ok' => false,
+                    'message' => 'La persona seleccionada no pertenece a ese departamento.'
+                ]);
+            }
+        }
+
+        $observacionBase = $tipo === 'ENTRADA' ? 'Ingreso de invitado' : 'Salida de invitado';
+        $observacionInvitado = compose_observacion($observacionBase, $observacionManual);
+
+        $insert = $pdo->prepare('INSERT INTO asistencias (cedula, carnet, tipo_registro, cedula_invitado, medio_identificacion, observacion, departamento_buscado, persona_buscada, tipo, fecha, hora) VALUES (:cedula, :carnet, :tipo_registro, :cedula_invitado, :medio_identificacion, :observacion, :departamento_buscado, :persona_buscada, :tipo, :fecha, :hora)');
         $insert->execute([
             ':cedula' => null,
             ':carnet' => null,
             ':tipo_registro' => 'INVITADO',
             ':cedula_invitado' => $identificador,
             ':medio_identificacion' => 'INVITADO',
-            ':observacion' => 'Ingreso de invitado',
+            ':observacion' => $observacionInvitado,
+            ':departamento_buscado' => $tipo === 'ENTRADA' ? $departamentoBuscado : null,
+            ':persona_buscada' => $tipo === 'ENTRADA' ? $personaBuscada : null,
             ':tipo' => $tipo,
             ':fecha' => $fecha,
             ':hora' => $hora
@@ -212,7 +260,7 @@ try {
 
         json_response(201, [
             'ok' => true,
-            'message' => sprintf('Entrada de invitado registrada con cedula %s.', $identificador),
+            'message' => sprintf('%s de invitado registrada con cedula %s.', $tipo === 'ENTRADA' ? 'Entrada' : 'Salida', $identificador),
             'data' => get_bootstrap_data($pdo)
         ]);
     }
@@ -265,10 +313,31 @@ function get_bootstrap_data(PDO $pdo): array
             COALESCE(carnet, 'INVITADO') AS carnet,
             COALESCE(medio_identificacion, IF(tipo_registro = 'INVITADO', 'INVITADO', '-')) AS medio_identificacion,
             COALESCE(observacion, '') AS observacion,
+            COALESCE(departamento_buscado, '') AS departamento_buscado,
+            COALESCE(persona_buscada, '') AS persona_buscada,
             tipo
-         FROM asistencias
+            FROM asistencias
+            WHERE fecha = CURDATE()
          ORDER BY id DESC
-         LIMIT 120"
+            LIMIT 200"
+    )->fetchAll();
+
+    $asistenciasArchivadas = $pdo->query(
+        "SELECT
+              DATE_FORMAT(fecha, '%d/%m/%Y') AS fecha,
+              DATE_FORMAT(hora, '%H:%i:%s') AS hora,
+              tipo_registro,
+              COALESCE(cedula, cedula_invitado) AS cedula,
+              COALESCE(carnet, 'INVITADO') AS carnet,
+              COALESCE(medio_identificacion, IF(tipo_registro = 'INVITADO', 'INVITADO', '-')) AS medio_identificacion,
+              COALESCE(observacion, '') AS observacion,
+                            COALESCE(departamento_buscado, '') AS departamento_buscado,
+                            COALESCE(persona_buscada, '') AS persona_buscada,
+              tipo,
+              DATE_FORMAT(archivado_en, '%d/%m/%Y %H:%i:%s') AS archivado_en
+            FROM asistencias_archivadas
+            ORDER BY fecha DESC, hora DESC, id DESC
+            LIMIT 500"
     )->fetchAll();
 
     $metricasStmt = $pdo->query(
@@ -284,6 +353,7 @@ function get_bootstrap_data(PDO $pdo): array
     return [
         'empleados' => $empleados,
         'asistencias' => $asistencias,
+        'asistencias_archivadas' => $asistenciasArchivadas,
         'metricas' => [
             'personal_activo' => (int) $metricas['personal_activo'],
             'entradas_hoy' => (int) $metricas['entradas_hoy'],
@@ -291,6 +361,35 @@ function get_bootstrap_data(PDO $pdo): array
             'marcaciones_hoy' => (int) $metricas['marcaciones_hoy']
         ]
     ];
+}
+
+function archive_expired_attendance(PDO $pdo): void
+{
+    $pdo->beginTransaction();
+
+    $pdo->exec(
+        "INSERT IGNORE INTO asistencias_archivadas
+                (origen_asistencia_id, cedula, carnet, tipo_registro, cedula_invitado, medio_identificacion, observacion, departamento_buscado, persona_buscada, tipo, fecha, hora)
+         SELECT
+            a.id,
+            a.cedula,
+            a.carnet,
+            a.tipo_registro,
+            a.cedula_invitado,
+            a.medio_identificacion,
+            a.observacion,
+                a.departamento_buscado,
+                a.persona_buscada,
+            a.tipo,
+            a.fecha,
+            a.hora
+         FROM asistencias a
+         WHERE a.fecha < CURDATE()"
+    );
+
+    $pdo->exec('DELETE FROM asistencias WHERE fecha < CURDATE()');
+
+    $pdo->commit();
 }
 
 function get_json_input(): array
@@ -340,6 +439,48 @@ function validate_guest_cedula(string $cedula): void
     }
 }
 
+function validate_observacion(string $observacion): void
+{
+    if ($observacion === '') {
+        return;
+    }
+
+    if (mb_strlen($observacion) > 255) {
+        throw new RuntimeException('La observacion no puede superar 255 caracteres.');
+    }
+}
+
+function validate_guest_context(string $departamentoBuscado, string $personaBuscada): void
+{
+    if (mb_strlen($departamentoBuscado) > 120) {
+        throw new RuntimeException('El departamento buscado no puede superar 120 caracteres.');
+    }
+
+    if (mb_strlen($personaBuscada) > 120) {
+        throw new RuntimeException('La persona buscada no puede superar 120 caracteres.');
+    }
+}
+
+function compose_observacion(string $base, string $manual): ?string
+{
+    $base = trim($base);
+    $manual = trim($manual);
+
+    if ($base !== '' && $manual !== '') {
+        return sprintf('%s. %s', $base, $manual);
+    }
+
+    if ($base !== '') {
+        return $base;
+    }
+
+    if ($manual !== '') {
+        return $manual;
+    }
+
+    return null;
+}
+
 function validate_employee_payload(array $payload): void
 {
     $cedula = normalize_text((string) $payload['cedula']);
@@ -364,6 +505,59 @@ function validate_employee_payload(array $payload): void
     }
 }
 
+function get_last_attendance_for_employee(PDO $pdo, string $cedula): ?array
+{
+    $stmt = $pdo->prepare(
+        'SELECT tipo, tipo_registro
+         FROM asistencias
+         WHERE tipo_registro = "EMPLEADO" AND cedula = :cedula
+         ORDER BY id DESC
+         LIMIT 1'
+    );
+    $stmt->execute([':cedula' => $cedula]);
+    $row = $stmt->fetch();
+
+    return $row ?: null;
+}
+
+function get_last_attendance_for_guest(PDO $pdo, string $cedula): ?array
+{
+    $stmt = $pdo->prepare(
+        'SELECT tipo, tipo_registro
+         FROM asistencias
+         WHERE tipo_registro = "INVITADO" AND cedula_invitado = :cedula
+         ORDER BY id DESC
+         LIMIT 1'
+    );
+    $stmt->execute([':cedula' => $cedula]);
+    $row = $stmt->fetch();
+
+    return $row ?: null;
+}
+
+function enforce_alternating_mark(?array $lastAttendance, string $currentType, string $personaType): void
+{
+    if ($lastAttendance === null) {
+        if ($currentType === 'SALIDA') {
+            json_response(422, [
+                'ok' => false,
+                'message' => sprintf('Primero debes marcar entrada antes de registrar salida para %s.', $personaType)
+            ]);
+        }
+
+        return;
+    }
+
+    if (($lastAttendance['tipo'] ?? '') === $currentType) {
+        json_response(422, [
+            'ok' => false,
+            'message' => $currentType === 'ENTRADA'
+                ? sprintf('Ya existe una entrada activa. Debes marcar salida antes de volver a entrar como %s.', $personaType)
+                : sprintf('Ya existe una salida registrada. Debes marcar entrada antes de volver a salir como %s.', $personaType)
+        ]);
+    }
+}
+
 function json_response(int $statusCode, array $payload): void
 {
     http_response_code($statusCode);
@@ -381,6 +575,8 @@ function ensure_schema(PDO $pdo): void
     ensure_column($pdo, 'asistencias', 'cedula_invitado', 'VARCHAR(20) NULL AFTER tipo_registro');
     ensure_column($pdo, 'asistencias', 'medio_identificacion', "ENUM('CARNET', 'CEDULA', 'INVITADO') NULL AFTER cedula_invitado");
     ensure_column($pdo, 'asistencias', 'observacion', 'VARCHAR(255) NULL AFTER medio_identificacion');
+    ensure_column($pdo, 'asistencias', 'departamento_buscado', 'VARCHAR(120) NULL AFTER observacion');
+    ensure_column($pdo, 'asistencias', 'persona_buscada', 'VARCHAR(120) NULL AFTER departamento_buscado');
     ensure_index($pdo, 'asistencias', 'idx_asistencias_carnet', 'carnet');
     ensure_index($pdo, 'asistencias', 'idx_asistencias_tipo_registro', 'tipo_registro');
     ensure_index($pdo, 'asistencias', 'idx_asistencias_cedula_invitado', 'cedula_invitado');

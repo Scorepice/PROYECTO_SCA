@@ -41,6 +41,7 @@ En `app.js`:
 - Validacion de datos en frontend y backend
 - Dashboard de metricas diarias
 - Dashboard con tendencia de entradas/salidas de los ultimos 7 dias
+- Archivo automatico de asistencia para mover el dia anterior a un historial separado
 - Exportacion CSV de empleados y asistencias
 - Limpieza total de empleados y asistencias
 
@@ -48,3 +49,4 @@ En `app.js`:
 Si ya tenias la base activa, vuelve a ejecutar `backend/schema.sql` para aplicar las columnas nuevas en `asistencias`:
 - `medio_identificacion`
 - `observacion`
+- crea la tabla `asistencias_archivadas` para el modulo de archivo automatico
