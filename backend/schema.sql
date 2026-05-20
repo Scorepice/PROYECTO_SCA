@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS empleados (
     nombre VARCHAR(120) NOT NULL,
     departamento VARCHAR(120) NOT NULL,
     cargo VARCHAR(120) NOT NULL,
+    estado VARCHAR(20) NOT NULL DEFAULT 'ACTIVO',
     creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uk_empleados_cedula (cedula),
@@ -121,6 +122,16 @@ ON DUPLICATE KEY UPDATE
     nombre_mostrar = VALUES(nombre_mostrar),
     rol = VALUES(rol);
 
+-- Usuarios semilla para roles de SEGURIDAD y RRHH
+INSERT INTO usuarios (usuario, clave, nombre_mostrar, rol)
+VALUES
+    ('seguridad', 'seg123', 'Usuario Seguridad', 'SEGURIDAD'),
+    ('rrhh', 'rrhh123', 'Usuario RRHH', 'RRHH')
+ON DUPLICATE KEY UPDATE
+    clave = VALUES(clave),
+    nombre_mostrar = VALUES(nombre_mostrar),
+    rol = VALUES(rol);
+
 INSERT INTO departamentos (nombre)
 VALUES
     ('Gerencia de Tecnologia (ASIT)'),
@@ -130,13 +141,14 @@ VALUES
     ('Comercial')
 ON DUPLICATE KEY UPDATE nombre = VALUES(nombre);
 
-INSERT INTO empleados (cedula, carnet, nombre, departamento, cargo)
-VALUES ('V10000000', 'CAR-10000000', 'Usuario Demo', 'Gerencia de Tecnologia (ASIT)', 'Analista')
+INSERT INTO empleados (cedula, carnet, nombre, departamento, cargo, estado)
+VALUES ('V10000000', 'CAR-10000000', 'Usuario Demo', 'Gerencia de Tecnologia (ASIT)', 'Analista', 'ACTIVO')
 ON DUPLICATE KEY UPDATE
     carnet = VALUES(carnet),
     nombre = VALUES(nombre),
     departamento = VALUES(departamento),
-    cargo = VALUES(cargo);
+    cargo = VALUES(cargo),
+    estado = VALUES(estado);
 
 INSERT IGNORE INTO asistencias_archivadas (
     origen_asistencia_id,
@@ -146,6 +158,8 @@ INSERT IGNORE INTO asistencias_archivadas (
     cedula_invitado,
     medio_identificacion,
     observacion,
+    departamento_buscado,
+    persona_buscada,
     tipo,
     fecha,
     hora
@@ -158,6 +172,8 @@ SELECT
     a.cedula_invitado,
     a.medio_identificacion,
     a.observacion,
+    a.departamento_buscado,
+    a.persona_buscada,
     a.tipo,
     a.fecha,
     a.hora

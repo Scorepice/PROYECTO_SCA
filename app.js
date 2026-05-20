@@ -10,8 +10,8 @@ const APP_CONFIG = {
         archivadas: 'sca_asistencias_archivadas'
     },
     auth: {
-        username: 'admin_cabimas',
-        password: '123456'
+        seguridad: { username: 'seguridad', password: 'seg123' },
+        rrhh: { username: 'rrhh', password: 'rrhh123' }
     },
     departamentos: [
         'Gerencia de Tecnologia (ASIT)',
@@ -19,6 +19,13 @@ const APP_CONFIG = {
         'Prevencion y Proteccion (PCP)',
         'Distribucion',
         'Comercial'
+    ],
+    cargos: [
+        'Analista',
+        'Supervisor',
+        'Tecnico',
+        'Coordinador',
+        'Gerente'
     ],
     menu: [
         { id: 'screen-asistencia', label: 'Asistencia' },
@@ -32,7 +39,8 @@ const APP_CONFIG = {
 const state = {
     session: {
         logged: false,
-        activeScreen: 'screen-login'
+        activeScreen: 'screen-login',
+        role: ''
     },
     editingEmpleadoCedula: null,
     backendOnline: false,
@@ -43,8 +51,14 @@ const state = {
         lastCheckKey: null
     },
     attendanceMode: 'ENTRADA',
+    dashboard: {
+        empleadoCedula: '',
+        departamento: ''
+    },
     metricas: {
         personal_activo: 0,
+        personal_vacaciones: 0,
+        personal_suspendido: 0,
         entradas_hoy: 0,
         salidas_hoy: 0,
         marcaciones_hoy: 0
@@ -53,12 +67,41 @@ const state = {
         tipo: null,
         columns: [],
         rows: [],
+        summaryColumns: [],
+        summaryRows: [],
         title: '',
-        subtitle: ''
+        subtitle: '',
+        filters: {
+            fecha: '',
+            tipo: 'TODOS'
+        }
     }
 };
 
-const DEFAULT_SCREEN_AFTER_LOGIN = 'screen-asistencia';
+function getDefaultScreenForRole(role) {
+    const r = String(role || '').toUpperCase();
+    if (r === 'SEGURIDAD') return 'screen-archivo';
+    // RRHH and others default to dashboard
+    return 'screen-dashboard';
+}
+
+function isScreenAllowedForRole(screenId, role) {
+    const r = String(role || '').toUpperCase();
+
+    if (!r) return true;
+
+    if (r === 'SEGURIDAD') {
+        // seguridad ve archivo y marcaje (y login)
+        return screenId === 'screen-archivo' || screenId === 'screen-asistencia' || screenId === 'screen-login';
+    }
+
+    if (r === 'RRHH') {
+        // RRHH ve todo excepto marcaje (screen-asistencia)
+        return screenId !== 'screen-asistencia';
+    }
+
+    return true;
+}
 
 const el = {
     header: document.getElementById('app-header'),
@@ -154,6 +197,41 @@ function applyBootstrapData(data) {
     if (state.reporte.tipo) {
         renderReportPreview(state.reporte.tipo);
     }
+    syncCargoOptions();
+    syncEmployeeDepartmentFilterOptions();
+}
+
+function syncCargoOptions() {
+    const cargoSelect = document.getElementById('cargo-select');
+    if (!cargoSelect) return;
+
+    const existing = new Set(APP_CONFIG.cargos || []);
+    (state.empleados || []).forEach((e) => {
+        if (e && e.cargo) existing.add(e.cargo);
+    });
+
+    const options = ['<option value="">Selecciona un cargo</option>', ...Array.from(existing).map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`)];
+    const current = cargoSelect.value;
+    cargoSelect.innerHTML = options.join('');
+    if (current) cargoSelect.value = current;
+}
+
+function syncEmployeeDepartmentFilterOptions() {
+    const filtroDepartamento = document.getElementById('filtro-departamento-empleados');
+    if (!filtroDepartamento) return;
+
+    const current = filtroDepartamento.value;
+    const departamentos = new Set(APP_CONFIG.departamentos || []);
+    (state.empleados || []).forEach((emp) => {
+        if (emp && emp.departamento) {
+            departamentos.add(String(emp.departamento));
+        }
+    });
+
+    filtroDepartamento.innerHTML = ['<option value="">Todos</option>', ...Array.from(departamentos).sort((a, b) => a.localeCompare(b, 'es')).map((dep) => `<option value="${escapeHtml(dep)}">${escapeHtml(dep)}</option>`)].join('');
+    if (current) {
+        filtroDepartamento.value = current;
+    }
 }
 
 function mountTemplates() {
@@ -169,6 +247,11 @@ function mountTemplates() {
         .map((dep) => `<option value="${dep}">${dep}</option>`)
         .join('');
 
+    const cargoSelect = document.getElementById('cargo-select');
+    if (cargoSelect) {
+        cargoSelect.innerHTML = ['<option value="">Selecciona un cargo</option>', ...APP_CONFIG.cargos.map((c) => `<option value="${c}">${c}</option>`)].join('');
+    }
+
     const asistenciaDeptSelect = document.getElementById('asistencia-departamento');
     if (asistenciaDeptSelect) {
         asistenciaDeptSelect.innerHTML = ['<option value="">Selecciona un departamento</option>', ...APP_CONFIG.departamentos.map((dep) => `<option value="${dep}">${dep}</option>`)].join('');
@@ -179,6 +262,24 @@ function mountTemplates() {
     // Mostrar/ocultar campo pequeño para observación personalizada (opción 'Otro')
     const observacionSelect = document.getElementById('asistencia-observacion');
     const observacionOtro = document.getElementById('asistencia-observacion-otro');
+    const reporteFecha = document.getElementById('reporte-fecha-asistencia');
+    const reporteTipo = document.getElementById('reporte-tipo-asistencia');
+
+    if (reporteFecha && !reporteFecha.value) {
+        reporteFecha.value = getLocalDateInputValue(new Date());
+    }
+
+    if (reporteTipo && !reporteTipo.value) {
+        reporteTipo.value = 'TODOS';
+    }
+
+    const estadoSelect = document.getElementById('estado-select');
+    if (estadoSelect && !estadoSelect.value) {
+        estadoSelect.value = 'ACTIVO';
+    }
+
+    syncEmployeeDepartmentFilterOptions();
+
     function updateObservationInputVisibility() {
         if (!observacionSelect || !observacionOtro) return;
         if (observacionSelect.value === 'Otro') {
@@ -206,6 +307,8 @@ function getTemplate(id) {
 function bindGlobalEvents() {
     el.btnCerrarSesion.addEventListener('click', () => {
         state.session.logged = false;
+        state.session.role = '';
+        renderMenu();
         showScreen('screen-login');
         renderAll();
     });
@@ -215,6 +318,10 @@ function bindScreenEvents() {
     document.getElementById('form-login').addEventListener('submit', onLogin);
     document.getElementById('form-empleado').addEventListener('submit', onEmpleadoSubmit);
     document.getElementById('btn-cancelar-edicion-empleado').addEventListener('click', onCancelarEdicionEmpleado);
+    const btnLimpiarFiltrosEmpleados = document.getElementById('btn-limpiar-filtros-empleados');
+    if (btnLimpiarFiltrosEmpleados) {
+        btnLimpiarFiltrosEmpleados.addEventListener('click', onLimpiarFiltrosEmpleados);
+    }
     document.getElementById('btn-limpiar-empleados').addEventListener('click', onLimpiarEmpleados);
     document.getElementById('btn-actualizar-archivo').addEventListener('click', onActualizarArchivo);
 
@@ -228,35 +335,85 @@ function bindScreenEvents() {
 
     const asistenciaIdentificador = document.getElementById('asistencia-identificador');
     if (asistenciaIdentificador) {
-        asistenciaIdentificador.addEventListener('input', updateGuestFieldsVisibility);
+        asistenciaIdentificador.addEventListener('input', () => {
+            updateGuestFieldsVisibility();
+            updateAttendanceEmployeeInfo();
+        });
     }
 
     document.getElementById('btn-previa-empleados').addEventListener('click', () => renderReportPreview('empleados'));
     document.getElementById('btn-previa-asistencia').addEventListener('click', () => renderReportPreview('asistencia'));
-    document.getElementById('btn-descargar-excel').addEventListener('click', () => downloadCurrentReport('excel'));
+    document.getElementById('btn-aplicar-filtro-reporte').addEventListener('click', () => renderReportPreview('asistencia'));
+    document.getElementById('reporte-fecha-asistencia').addEventListener('change', () => {
+        if (state.reporte.tipo === 'asistencia') {
+            renderReportPreview('asistencia');
+        }
+    });
+    document.getElementById('reporte-tipo-asistencia').addEventListener('change', () => {
+        if (state.reporte.tipo === 'asistencia') {
+            renderReportPreview('asistencia');
+        }
+    });
+    const dashboardFecha = document.getElementById('dashboard-fecha');
+    if (dashboardFecha) {
+        dashboardFecha.addEventListener('change', () => renderDashboard());
+    }
+    const dashboardEmpleado = document.getElementById('dashboard-filtro-empleado');
+    if (dashboardEmpleado) {
+        dashboardEmpleado.addEventListener('change', () => renderDashboard());
+    }
+    const dashboardDepartamento = document.getElementById('dashboard-filtro-departamento');
+    if (dashboardDepartamento) {
+        dashboardDepartamento.addEventListener('change', () => renderDashboard());
+    }
+    const filtroEstadoEmpleados = document.getElementById('filtro-estado-empleados');
+    if (filtroEstadoEmpleados) {
+        filtroEstadoEmpleados.addEventListener('change', () => renderTablaEmpleados());
+    }
+    const filtroNombreEmpleados = document.getElementById('filtro-nombre-empleados');
+    if (filtroNombreEmpleados) {
+        filtroNombreEmpleados.addEventListener('input', () => renderTablaEmpleados());
+    }
+    const filtroDepartamentoEmpleados = document.getElementById('filtro-departamento-empleados');
+    if (filtroDepartamentoEmpleados) {
+        filtroDepartamentoEmpleados.addEventListener('change', () => renderTablaEmpleados());
+    }
     document.getElementById('btn-descargar-pdf').addEventListener('click', () => downloadCurrentReport('pdf'));
 }
 
 async function onLogin(event) {
     event.preventDefault();
+    syncDashboardFilterOptions();
 
     const user = document.getElementById('login-user').value.trim();
     const pass = document.getElementById('login-pass').value;
     const feedback = document.getElementById('login-feedback');
 
     try {
+        let loginPayload = null;
         if (useRemoteBackend()) {
-            await apiRequest('login', 'POST', { user, pass });
+            loginPayload = await apiRequest('login', 'POST', { user, pass });
         } else {
-            if (user !== APP_CONFIG.auth.username || pass !== APP_CONFIG.auth.password) {
+            // local fallback: soporta usuarios de prueba para SEGURIDAD y RRHH
+            const seguridad = APP_CONFIG.auth.seguridad || {};
+            const rrhh = APP_CONFIG.auth.rrhh || {};
+
+            if (user === seguridad.username && pass === seguridad.password) {
+                loginPayload = { role: 'SEGURIDAD' };
+            } else if (user === rrhh.username && pass === rrhh.password) {
+                loginPayload = { role: 'RRHH' };
+            } else {
                 throw new Error('Credenciales invalidas.');
             }
         }
 
         state.session.logged = true;
+        state.session.role = (loginPayload && loginPayload.role) ? String(loginPayload.role).toUpperCase() : 'RRHH';
         feedback.textContent = 'Acceso correcto.';
         feedback.className = 'feedback ok';
-        showScreen(DEFAULT_SCREEN_AFTER_LOGIN);
+        const defaultScreen = getDefaultScreenForRole(state.session.role);
+        renderMenu();
+        showScreen(defaultScreen);
         renderAll();
     } catch (error) {
         feedback.textContent = error.message;
@@ -276,7 +433,8 @@ async function onEmpleadoSubmit(event) {
         cedula: String(formData.get('cedula') || '').trim(),
         carnet: String(formData.get('carnet') || '').trim(),
         departamento: String(formData.get('departamento') || '').trim(),
-        cargo: String(formData.get('cargo') || '').trim()
+        cargo: String(formData.get('cargo') || '').trim(),
+        estado: String(formData.get('estado') || 'ACTIVO').trim().toUpperCase()
     };
 
     const feedback = document.getElementById('empleado-feedback');
@@ -389,6 +547,26 @@ async function onLimpiarEmpleados() {
     }
 }
 
+function onLimpiarFiltrosEmpleados() {
+    const filtroNombre = document.getElementById('filtro-nombre-empleados');
+    const filtroDepartamento = document.getElementById('filtro-departamento-empleados');
+    const filtroEstado = document.getElementById('filtro-estado-empleados');
+
+    if (filtroNombre) {
+        filtroNombre.value = '';
+    }
+
+    if (filtroDepartamento) {
+        filtroDepartamento.value = '';
+    }
+
+    if (filtroEstado) {
+        filtroEstado.value = '';
+    }
+
+    renderTablaEmpleados();
+}
+
 async function onActualizarArchivo() {
     const feedback = document.getElementById('archivo-feedback');
 
@@ -407,6 +585,9 @@ async function onRegistrarAsistencia(tipo) {
     const identificadorInput = document.getElementById('asistencia-identificador');
     const observacionSelect = document.getElementById('asistencia-observacion');
     const observacionOtro = document.getElementById('asistencia-observacion-otro');
+    const empleadoInfo = document.getElementById('asistencia-empleado-info');
+    const empleadoNombre = document.getElementById('asistencia-empleado-nombre');
+    const empleadoDepartamento = document.getElementById('asistencia-empleado-departamento');
     const feedback = document.getElementById('asistencia-feedback');
     const identificador = identificadorInput.value.trim().toUpperCase();
     const departamentoInput = document.getElementById('asistencia-departamento');
@@ -532,6 +713,15 @@ async function onRegistrarAsistencia(tipo) {
         }
 
         identificadorInput.value = '';
+        if (empleadoInfo) {
+            empleadoInfo.classList.add('hidden');
+        }
+        if (empleadoNombre) {
+            empleadoNombre.textContent = '-';
+        }
+        if (empleadoDepartamento) {
+            empleadoDepartamento.textContent = '-';
+        }
         if (departamentoInput) {
             departamentoInput.value = '';
         }
@@ -555,7 +745,13 @@ async function onRegistrarAsistencia(tipo) {
 }
 
 function showScreen(screenId) {
-    state.session.activeScreen = screenId;
+    // comprobar permisos de pantalla por rol
+    if (!isScreenAllowedForRole(screenId, state.session.role)) {
+        const fallback = getDefaultScreenForRole(state.session.role);
+        state.session.activeScreen = fallback;
+    } else {
+        state.session.activeScreen = screenId;
+    }
 
     Object.values(el.screens).forEach((screen) => {
         screen.classList.add('hidden');
@@ -573,15 +769,21 @@ function showScreen(screenId) {
 }
 
 function renderMenu() {
-    el.menu.innerHTML = APP_CONFIG.menu
-        .map(
-            (item) =>
-                `<button type="button" data-screen="${item.id}">${item.label}</button>`
-        )
+    const role = state.session.role;
+    const items = APP_CONFIG.menu.filter((item) => isScreenAllowedForRole(item.id, role));
+
+    el.menu.innerHTML = items
+        .map((item) => `<button type="button" data-screen="${item.id}">${item.label}</button>`)
         .join('');
 
     el.menu.querySelectorAll('button').forEach((button) => {
         button.addEventListener('click', () => {
+            // impedir acceso a pantallas no permitidas
+            if (!isScreenAllowedForRole(button.dataset.screen, state.session.role)) {
+                const fallback = getDefaultScreenForRole(state.session.role);
+                showScreen(fallback);
+                return;
+            }
             showScreen(button.dataset.screen);
         });
     });
@@ -612,9 +814,13 @@ function renderDashboard() {
     const localMetricas = buildLocalMetrics();
     const metricas = useRemoteBackend() ? state.metricas : localMetricas;
     const asistenciasHoy = getActiveAttendanceRows();
+    const empleadosVacaciones = Number(metricas.personal_vacaciones) || 0;
+    const empleadosSuspendidos = Number(metricas.personal_suspendido) || 0;
     const invitadosHoy = asistenciasHoy.filter(
         (registro) => (registro.tipo_registro || 'EMPLEADO') === 'INVITADO' && registro.tipo === 'ENTRADA'
     ).length;
+
+    syncDashboardDateFilter();
 
     const blocks = [
         {
@@ -641,6 +847,16 @@ function renderDashboard() {
             label: 'Invitados hoy',
             value: invitadosHoy,
             accent: '#d68a00'
+        },
+        {
+            label: 'Personal en vacaciones',
+            value: empleadosVacaciones,
+            accent: '#7b4dc7'
+        },
+        {
+            label: 'Personal suspendido',
+            value: empleadosSuspendidos,
+            accent: '#6b7280'
         }
     ];
 
@@ -654,9 +870,300 @@ function renderDashboard() {
         )
         .join('');
 
+    renderDashboardDonut();
+    renderDashboardEarlyArrivalDonuts();
     renderDashboardChart(metricas, invitadosHoy);
     renderDashboardWeeklyChart();
     renderDashboardMovimientos();
+}
+
+function syncDashboardDateFilter() {
+    const dashboardFecha = document.getElementById('dashboard-fecha');
+    if (dashboardFecha && !dashboardFecha.value) {
+        dashboardFecha.value = getLocalDateInputValue(new Date());
+    }
+}
+
+function syncDashboardFilterOptions() {
+    const dashboardEmpleado = document.getElementById('dashboard-filtro-empleado');
+    const dashboardDepartamento = document.getElementById('dashboard-filtro-departamento');
+
+    if (dashboardEmpleado) {
+        const currentValue = dashboardEmpleado.value;
+        dashboardEmpleado.innerHTML = [
+            '<option value="">Todos los empleados</option>',
+            ...state.empleados
+                .slice()
+                .sort((left, right) => String(left.nombre || '').localeCompare(String(right.nombre || ''), 'es'))
+                .map((emp) => `<option value="${escapeHtml(emp.cedula)}">${escapeHtml(emp.nombre)} - ${escapeHtml(emp.departamento)}</option>`)
+        ].join('');
+
+        if (currentValue) {
+            dashboardEmpleado.value = currentValue;
+        }
+    }
+
+    if (dashboardDepartamento) {
+        const currentValue = dashboardDepartamento.value;
+        dashboardDepartamento.innerHTML = [
+            '<option value="">Todos los departamentos</option>',
+            ...APP_CONFIG.departamentos.map((departamento) => `<option value="${escapeHtml(departamento)}">${escapeHtml(departamento)}</option>`)
+        ].join('');
+
+        if (currentValue) {
+            dashboardDepartamento.value = currentValue;
+        }
+    }
+}
+
+function getDashboardFilters() {
+    const dashboardEmpleado = document.getElementById('dashboard-filtro-empleado');
+    const dashboardDepartamento = document.getElementById('dashboard-filtro-departamento');
+
+    return {
+        empleadoCedula: String(dashboardEmpleado?.value || '').trim().toUpperCase(),
+        departamento: String(dashboardDepartamento?.value || '').trim()
+    };
+}
+
+function findAttendanceEmployee(registro) {
+    const tipoRegistro = String(registro.tipo_registro || 'EMPLEADO').toUpperCase();
+
+    if (tipoRegistro !== 'EMPLEADO') {
+        return null;
+    }
+
+    return state.empleados.find(
+        (emp) => String(emp.cedula || '').toUpperCase() === String(registro.cedula || '').toUpperCase()
+            || String(emp.carnet || '').toUpperCase() === String(registro.carnet || '').toUpperCase()
+    ) || null;
+}
+
+function getDashboardDateKey() {
+    const dashboardFecha = document.getElementById('dashboard-fecha');
+    const value = dashboardFecha?.value || getLocalDateInputValue(new Date());
+    return normalizeAttendanceDateKey(value);
+}
+
+function getDashboardEntriesForSelectedDate() {
+    const dateKey = getDashboardDateKey();
+    const filters = getDashboardFilters();
+    return getAllAttendanceRows().filter((registro) => {
+        const isEntry = String(registro.tipo || '').toUpperCase() === 'ENTRADA';
+        if (!isEntry || normalizeAttendanceDateKey(registro.fecha) !== dateKey) {
+            return false;
+        }
+
+        if (filters.empleadoCedula || filters.departamento) {
+            const empleado = findAttendanceEmployee(registro);
+
+            if (filters.empleadoCedula && (!empleado || String(empleado.cedula || '').toUpperCase() !== filters.empleadoCedula)) {
+                return false;
+            }
+
+            if (filters.departamento && (!empleado || String(empleado.departamento || '') !== filters.departamento)) {
+                return false;
+            }
+        }
+
+        return true;
+    });
+}
+
+function renderDashboardDonut() {
+    const container = document.getElementById('dashboard-donut');
+    const summary = document.getElementById('dashboard-entry-summary');
+
+    if (!container || !summary) {
+        return;
+    }
+
+    const entries = getDashboardEntriesForSelectedDate();
+    const stats = buildDashboardEntryStats(entries);
+    const total = stats.total || 0;
+
+    const carnetPercent = total ? (stats.carnet / total) * 100 : 0;
+    const cedulaPercent = total ? (stats.cedula / total) * 100 : 0;
+    const invitadoPercent = total ? (stats.invitado / total) * 100 : 0;
+
+    const segments = total
+        ? [
+            `#177f4b 0 ${carnetPercent}%`,
+            `#2a6bc8 ${carnetPercent}% ${carnetPercent + cedulaPercent}%`,
+            `#d68a00 ${carnetPercent + cedulaPercent}% 100%`
+        ].join(', ')
+        : '#d9e6f8 0 100%';
+
+    container.innerHTML = `
+        <div class="dashboard-donut-shell" style="--segments:${segments};">
+            <div class="dashboard-donut-hole">
+                <div>
+                    <strong>${total}</strong>
+                    <span>Entradas</span>
+                </div>
+            </div>
+        </div>`;
+
+    summary.innerHTML = [
+        { label: 'Total entradas', value: total, percent: '100%', accent: 'total' },
+        { label: 'Con carnet', value: stats.carnet, percent: `${Math.round(carnetPercent)}%`, accent: 'carnet' },
+        { label: 'Con cédula', value: stats.cedula, percent: `${Math.round(cedulaPercent)}%`, accent: 'cedula' },
+        { label: 'Invitados', value: stats.invitado, percent: `${Math.round(invitadoPercent)}%`, accent: 'invitado' }
+    ]
+        .map((item) => `
+            <article class="dashboard-summary-item">
+                <div>
+                    <strong>${escapeHtml(item.label)}</strong>
+                    <small>${escapeHtml(item.value)} registro${item.value === 1 ? '' : 's'}</small>
+                </div>
+                <span class="dashboard-summary-pill ${item.accent}">${escapeHtml(item.percent)}</span>
+            </article>`)
+        .join('');
+}
+
+function renderDashboardEarlyArrivalDonuts() {
+    renderEarlyArrivalDonut(
+        'dashboard-early-employee',
+        'dashboard-early-employee-meta',
+        getDashboardEntriesForEmployeeScope(),
+        'Empleado'
+    );
+
+    renderEarlyArrivalDonut(
+        'dashboard-early-department',
+        'dashboard-early-department-meta',
+        getDashboardEntriesForDepartmentScope(),
+        'Departamento'
+    );
+}
+
+function getDashboardEntriesForEmployeeScope() {
+    const dateKey = getDashboardDateKey();
+    const filters = getDashboardFilters();
+
+    return getAllAttendanceRows().filter((registro) => {
+        const isEntry = String(registro.tipo || '').toUpperCase() === 'ENTRADA';
+        if (!isEntry || normalizeAttendanceDateKey(registro.fecha) !== dateKey) {
+            return false;
+        }
+
+        if (!filters.empleadoCedula) {
+            return String(registro.tipo_registro || 'EMPLEADO').toUpperCase() === 'EMPLEADO';
+        }
+
+        const empleado = findAttendanceEmployee(registro);
+        return Boolean(empleado) && String(empleado.cedula || '').toUpperCase() === filters.empleadoCedula;
+    });
+}
+
+function getDashboardEntriesForDepartmentScope() {
+    const dateKey = getDashboardDateKey();
+    const filters = getDashboardFilters();
+
+    return getAllAttendanceRows().filter((registro) => {
+        const isEntry = String(registro.tipo || '').toUpperCase() === 'ENTRADA';
+        if (!isEntry || normalizeAttendanceDateKey(registro.fecha) !== dateKey) {
+            return false;
+        }
+
+        if (!filters.departamento) {
+            return String(registro.tipo_registro || 'EMPLEADO').toUpperCase() === 'EMPLEADO';
+        }
+
+        const empleado = findAttendanceEmployee(registro);
+        return Boolean(empleado) && String(empleado.departamento || '') === filters.departamento;
+    });
+}
+
+function renderEarlyArrivalDonut(containerId, metaId, entries, scopeLabel) {
+    const container = document.getElementById(containerId);
+    const meta = document.getElementById(metaId);
+
+    if (!container || !meta) {
+        return;
+    }
+
+    const stats = buildEarlyArrivalStats(entries);
+    const total = stats.total;
+    const earlyPercent = total ? (stats.early / total) * 100 : 0;
+    const latePercent = total ? 100 - earlyPercent : 0;
+
+    const segments = total
+        ? [
+            `#177f4b 0 ${earlyPercent}%`,
+            `#d3202f ${earlyPercent}% 100%`
+        ].join(', ')
+        : '#d9e6f8 0 100%';
+
+    container.innerHTML = `
+        <div class="dashboard-donut-shell dashboard-donut-shell-early" style="--segments:${segments};">
+            <div class="dashboard-donut-hole">
+                <div>
+                    <strong>${Math.round(earlyPercent)}%</strong>
+                    <span>Tempranas</span>
+                </div>
+            </div>
+        </div>`;
+
+    const dashboardEmpleado = document.getElementById('dashboard-filtro-empleado');
+    const dashboardDepartamento = document.getElementById('dashboard-filtro-departamento');
+    const empleadoLabel = dashboardEmpleado?.selectedOptions?.[0]?.textContent || 'Todos los empleados';
+    const departamentoLabel = dashboardDepartamento?.selectedOptions?.[0]?.textContent || 'Todos los departamentos';
+
+    meta.textContent = total
+        ? `${stats.early} tempranas de ${total} entradas. ${latePercent ? `${Math.round(latePercent)}% no tempranas.` : 'Todas fueron tempranas.'} ${scopeLabel}. Filtro: ${empleadoLabel} / ${departamentoLabel}.`
+        : `Sin entradas para ${scopeLabel.toLowerCase()}. Filtro: ${empleadoLabel} / ${departamentoLabel}.`;
+}
+
+function buildEarlyArrivalStats(entries) {
+    const stats = {
+        total: 0,
+        early: 0
+    };
+
+    entries.forEach((registro) => {
+        const parsed = parseAttendanceDateTime(registro.fecha, registro.hora);
+        if (!parsed) {
+            return;
+        }
+
+        stats.total += 1;
+
+        const scheduleStart = buildDateWithTime(parsed, 8, 0, 0);
+        if (parsed < scheduleStart) {
+            stats.early += 1;
+        }
+    });
+
+    return stats;
+}
+
+function buildDashboardEntryStats(entries) {
+    const stats = {
+        total: 0,
+        carnet: 0,
+        cedula: 0,
+        invitado: 0
+    };
+
+    entries.forEach((registro) => {
+        stats.total += 1;
+
+        const tipoRegistro = String(registro.tipo_registro || 'EMPLEADO').toUpperCase();
+        if (tipoRegistro === 'INVITADO') {
+            stats.invitado += 1;
+            return;
+        }
+
+        const medio = String(registro.medio_identificacion || '').toUpperCase();
+        if (medio === 'CARNET') {
+            stats.carnet += 1;
+        } else if (medio === 'CEDULA') {
+            stats.cedula += 1;
+        }
+    });
+
+    return stats;
 }
 
 function renderDashboardWeeklyChart() {
@@ -804,20 +1311,49 @@ function buildDashboardListItems(registros, emptyMessage) {
 function renderTablaEmpleados() {
     const tbody = document.getElementById('tabla-empleados');
 
-    if (!state.empleados.length) {
-        tbody.innerHTML = '<tr><td colspan="6">No hay empleados registrados.</td></tr>';
+    function formatEmployeeName(name) {
+        const raw = String(name || '').trim();
+        if (!raw) return '-';
+        const parts = raw.split(/\s+/);
+        if (parts.length <= 2) {
+            return escapeHtml(raw);
+        }
+        // force break after first two words
+        const first = parts.slice(0, 2).join(' ');
+        const rest = parts.slice(2).join(' ');
+        return escapeHtml(first) + '<br>' + escapeHtml(rest);
+    }
+
+    const filtroEstadoSelect = document.getElementById('filtro-estado-empleados');
+    const filtroNombreInput = document.getElementById('filtro-nombre-empleados');
+    const filtroDepartamentoSelect = document.getElementById('filtro-departamento-empleados');
+
+    const filtroEstado = filtroEstadoSelect ? String(filtroEstadoSelect.value || '').trim().toUpperCase() : '';
+    const filtroNombre = filtroNombreInput ? String(filtroNombreInput.value || '').trim().toUpperCase() : '';
+    const filtroDepartamento = filtroDepartamentoSelect ? String(filtroDepartamentoSelect.value || '').trim().toUpperCase() : '';
+
+    const lista = state.empleados.filter((e) => {
+        const estadoOk = !filtroEstado || String(e.estado || '').toUpperCase() === filtroEstado;
+        const nombreOk = !filtroNombre || String(e.nombre || '').toUpperCase().includes(filtroNombre);
+        const departamentoOk = !filtroDepartamento || String(e.departamento || '').toUpperCase() === filtroDepartamento;
+        return estadoOk && nombreOk && departamentoOk;
+    });
+
+    if (!lista.length) {
+        tbody.innerHTML = '<tr><td colspan="7">No hay empleados registrados.</td></tr>';
         return;
     }
 
-    tbody.innerHTML = state.empleados
+    tbody.innerHTML = lista
         .map(
             (emp) => `
                 <tr>
                     <td>${escapeHtml(emp.cedula)}</td>
                     <td>${escapeHtml(emp.carnet || '-')}</td>
-                    <td>${escapeHtml(emp.nombre)}</td>
+                    <td>${formatEmployeeName(emp.nombre)}</td>
                     <td>${escapeHtml(emp.departamento)}</td>
                     <td>${escapeHtml(emp.cargo)}</td>
+                    <td><span class="estado-badge estado-${String((emp.estado || 'ACTIVO')).toLowerCase().replace(/[^a-z0-9]+/g, '-')}">${escapeHtml(emp.estado || 'ACTIVO')}</span></td>
                     <td>
                         <button class="btn btn-primary" data-edit-cedula="${escapeHtml(emp.cedula)}" type="button">
                             Modificar
@@ -848,17 +1384,22 @@ function renderTablaAsistencia() {
     const registrosHoy = getActiveAttendanceRows();
 
     if (!registrosHoy.length) {
-        tbody.innerHTML = '<tr><td colspan="10">No hay marcaciones registradas hoy.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12">No hay marcaciones registradas hoy.</td></tr>';
         return;
     }
 
     tbody.innerHTML = registrosHoy
         .map(
-            (registro) => `
+            (registro) => {
+                const detalleEmpleado = resolveAttendanceEmployeeDetails(registro);
+
+                return `
                 <tr>
                     <td>${escapeHtml(registro.fecha)}</td>
                     <td>${escapeHtml(registro.hora)}</td>
                     <td>${escapeHtml(registro.tipo_registro || 'EMPLEADO')}</td>
+                    <td>${escapeHtml(detalleEmpleado.nombre)}</td>
+                    <td>${escapeHtml(detalleEmpleado.departamento)}</td>
                     <td>${escapeHtml(registro.cedula || registro.cedula_invitado || '-')}</td>
                     <td>${escapeHtml(registro.carnet || 'INVITADO')}</td>
                     <td>${escapeHtml(registro.medio_identificacion || '-')}</td>
@@ -867,6 +1408,7 @@ function renderTablaAsistencia() {
                         <td>${escapeHtml(registro.departamento_buscado || '-')}</td>
                             <td>${escapeHtml(registro.persona_buscada_nombre ? (registro.persona_buscada_nombre + ' (' + (registro.persona_buscada || '-') + ')') : (registro.persona_buscada || '-'))}</td>
                 </tr>`
+            }
         )
         .join('');
 }
@@ -874,6 +1416,7 @@ function renderTablaAsistencia() {
 function renderArchivo() {
     const resumen = document.getElementById('archivo-resumen');
     const tbody = document.getElementById('tabla-archivo');
+    const summaryIndex = buildAttendanceWorkSummaries(state.asistenciasArchivadas);
 
     if (resumen) {
         const archivados = state.asistenciasArchivadas.length;
@@ -900,17 +1443,23 @@ function renderArchivo() {
     }
 
     if (!state.asistenciasArchivadas.length) {
-        tbody.innerHTML = '<tr><td colspan="11">El archivo se llenara automaticamente cuando finalice el dia.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="16">El archivo se llenara automaticamente cuando finalice el dia.</td></tr>';
         return;
     }
 
     tbody.innerHTML = state.asistenciasArchivadas
         .map(
-            (registro) => `
+            (registro) => {
+                const detalleEmpleado = resolveAttendanceEmployeeDetails(registro);
+                const resumenTrabajo = getAttendanceWorkSummary(registro, summaryIndex);
+
+                return `
                 <tr>
                     <td>${escapeHtml(registro.fecha)}</td>
                     <td>${escapeHtml(registro.hora)}</td>
                     <td>${escapeHtml(registro.tipo_registro || 'EMPLEADO')}</td>
+                    <td>${escapeHtml(detalleEmpleado.nombre)}</td>
+                    <td>${escapeHtml(detalleEmpleado.departamento)}</td>
                     <td>${escapeHtml(registro.cedula || registro.cedula_invitado || '-')}</td>
                     <td>${escapeHtml(registro.carnet || 'INVITADO')}</td>
                     <td>${escapeHtml(registro.medio_identificacion || '-')}</td>
@@ -918,8 +1467,12 @@ function renderArchivo() {
                     <td>${escapeHtml(registro.observacion || '-')}</td>
                         <td>${escapeHtml(registro.departamento_buscado || '-')}</td>
                         <td>${escapeHtml(registro.persona_buscada_nombre ? (registro.persona_buscada_nombre + ' (' + (registro.persona_buscada || '-') + ')') : (registro.persona_buscada || '-'))}</td>
+                    <td>${escapeHtml(resumenTrabajo.horasTrabajadas)}</td>
+                    <td>${escapeHtml(resumenTrabajo.tiempoTarde)}</td>
+                    <td>${escapeHtml(resumenTrabajo.horasExtra)}</td>
                     <td>${escapeHtml(registro.archivado_en || '--')}</td>
                 </tr>`
+            }
         )
         .join('');
 }
@@ -961,6 +1514,9 @@ function iniciarEdicionEmpleado(cedula) {
     form.elements.carnet.value = empleado.carnet || '';
     form.elements.departamento.value = empleado.departamento;
     form.elements.cargo.value = empleado.cargo;
+    if (form.elements.estado) {
+        form.elements.estado.value = empleado.estado || 'ACTIVO';
+    }
 
     state.editingEmpleadoCedula = empleado.cedula;
     updateEmpleadoFormMode();
@@ -988,6 +1544,7 @@ function updateEmpleadoFormMode() {
 }
 
 function renderReportPreview(tipo) {
+    syncReportFiltersFromUI();
     const report = buildReportDataset(tipo);
     state.reporte = report;
 
@@ -999,6 +1556,10 @@ function renderReportPreview(tipo) {
     const fecha = document.getElementById('reporte-activo-fecha');
     const thead = document.getElementById('reporte-preview-head');
     const tbody = document.getElementById('reporte-preview-body');
+    const resumenShell = document.getElementById('reporte-resumen-shell');
+    const resumenMeta = document.getElementById('reporte-resumen-meta');
+    const resumenHead = document.getElementById('reporte-resumen-head');
+    const resumenBody = document.getElementById('reporte-resumen-body');
 
     if (titulo) {
         titulo.textContent = report.title;
@@ -1034,6 +1595,26 @@ function renderReportPreview(tipo) {
             : `<tr><td colspan="${report.columns.length}">No hay datos para mostrar.</td></tr>`;
     }
 
+    if (report.tipo === 'asistencia' && resumenShell) {
+        resumenShell.classList.remove('hidden');
+
+        if (resumenMeta) {
+            resumenMeta.textContent = `${report.summaryRows.length} empleados`;
+        }
+
+        if (resumenHead) {
+            resumenHead.innerHTML = `<tr>${report.summaryColumns.map((column) => `<th>${escapeHtml(column)}</th>`).join('')}</tr>`;
+        }
+
+        if (resumenBody) {
+            resumenBody.innerHTML = report.summaryRows.length
+                ? report.summaryRows.map((row) => `<tr>${row.map((value) => `<td>${escapeHtml(value)}</td>`).join('')}</tr>`).join('')
+                : `<tr><td colspan="${report.summaryColumns.length}">No hay resumen para mostrar.</td></tr>`;
+        }
+    } else if (resumenShell) {
+        resumenShell.classList.add('hidden');
+    }
+
     setReportDownloadState(true);
 }
 
@@ -1041,50 +1622,364 @@ function buildReportDataset(tipo) {
     const isEmployees = tipo === 'empleados';
     const columns = isEmployees
         ? ['Cedula', 'Carnet', 'Nombre', 'Departamento', 'Cargo']
-        : ['Fecha', 'Hora', 'Registro', 'Cedula', 'Carnet', 'Medio', 'Tipo', 'Observacion', 'Departamento buscado', 'Persona buscada'];
+        : ['Fecha', 'Hora', 'Registro', 'Empleado', 'Departamento empleado', 'Cedula', 'Carnet', 'Medio', 'Tipo', 'Observacion', 'Departamento buscado', 'Persona buscada', 'Horas trabajadas', 'Tardanza', 'Horas extra'];
 
+    const asistenciaFiltrada = getFilteredAttendanceRows();
+    const asistenciaTodas = getAllAttendanceRows();
+    const usarFallback = !isEmployees && asistenciaFiltrada.length === 0 && asistenciaTodas.length > 0;
+    const asistenciaRows = isEmployees ? [] : (usarFallback ? asistenciaTodas : asistenciaFiltrada);
+    const summaryIndex = buildAttendanceWorkSummaries(asistenciaRows);
     const rows = isEmployees
         ? state.empleados.map((emp) => [emp.cedula, emp.carnet || '-', emp.nombre, emp.departamento, emp.cargo])
-        : getAllAttendanceRows().map((registro) => [
-            registro.fecha,
-            registro.hora,
-            registro.tipo_registro || 'EMPLEADO',
-            registro.cedula || registro.cedula_invitado || '-',
-            registro.carnet || 'INVITADO',
-            registro.medio_identificacion || '-',
-            registro.tipo,
-            registro.observacion || '-',
-            registro.departamento_buscado || '-',
-            (registro.persona_buscada_nombre ? (registro.persona_buscada_nombre + ' (' + (registro.persona_buscada || '-') + ')') : (registro.persona_buscada || '-'))
-        ]);
+        : asistenciaRows.map((registro) => {
+            const detalleEmpleado = resolveAttendanceEmployeeDetails(registro);
+            const resumenTrabajo = getAttendanceWorkSummary(registro, summaryIndex);
+
+            return [
+                registro.fecha,
+                registro.hora,
+                registro.tipo_registro || 'EMPLEADO',
+                detalleEmpleado.nombre,
+                detalleEmpleado.departamento,
+                registro.cedula || registro.cedula_invitado || '-',
+                registro.carnet || 'INVITADO',
+                registro.medio_identificacion || '-',
+                registro.tipo,
+                registro.observacion || '-',
+                registro.departamento_buscado || '-',
+                (registro.persona_buscada_nombre ? (registro.persona_buscada_nombre + ' (' + (registro.persona_buscada || '-') + ')') : (registro.persona_buscada || '-')),
+                resumenTrabajo.horasTrabajadas,
+                resumenTrabajo.tiempoTarde,
+                resumenTrabajo.horasExtra
+            ];
+        });
 
     return {
         tipo,
         columns,
         rows,
+        summaryColumns: isEmployees ? [] : ['Empleado', 'Cedula', 'Marcaciones', 'Horas trabajadas', 'Tardanza', 'Horas extra'],
+        summaryRows: isEmployees ? [] : buildAttendanceEmployeeSummaryRows(asistenciaRows, summaryIndex),
         title: isEmployees ? 'Reporte de Empleados' : 'Reporte de Asistencia',
         subtitle: isEmployees
             ? 'Listado actual de empleados registrados en el sistema'
-            : 'Historial de marcaciones con detalle de medio, tipo y observación'
+            : buildAsistenciaReportSubtitle(usarFallback)
     };
+}
+
+function buildAsistenciaReportSubtitle(usandoFallback = false) {
+    const filters = state.reporte.filters || {};
+    const fecha = filters.fecha || 'todas las fechas';
+    const tipo = filters.tipo || 'TODOS';
+    const tipoLabel = tipo === 'ENTRADA' ? 'solo entradas' : (tipo === 'SALIDA' ? 'solo salidas' : 'entradas y salidas');
+
+    if (usandoFallback) {
+        return `Historial de marcaciones para ${fecha}, mostrando ${tipoLabel}. No hubo coincidencias exactas, por eso se muestran todos los registros disponibles.`;
+    }
+
+    return `Historial de marcaciones para ${fecha}, mostrando ${tipoLabel}`;
+}
+
+function syncReportFiltersFromUI() {
+    const fechaInput = document.getElementById('reporte-fecha-asistencia');
+    const tipoInput = document.getElementById('reporte-tipo-asistencia');
+
+    if (!state.reporte.filters) {
+        state.reporte.filters = { fecha: '', tipo: 'TODOS' };
+    }
+
+    if (fechaInput && fechaInput.value) {
+        state.reporte.filters.fecha = fechaInput.value;
+    }
+
+    if (tipoInput && tipoInput.value) {
+        state.reporte.filters.tipo = tipoInput.value;
+    }
+}
+
+function getFilteredAttendanceRows() {
+    const attendanceRows = getAttendanceRowsForReportDate();
+    const filters = state.reporte.filters || {};
+    const tipo = filters.tipo || 'TODOS';
+
+    return attendanceRows.filter((registro) => {
+        return tipo === 'TODOS' || String(registro.tipo || '').toUpperCase() === tipo;
+    });
+}
+
+function getAttendanceRowsForReportDate() {
+    const filters = state.reporte.filters || {};
+    const fecha = filters.fecha ? normalizeDateInput(filters.fecha) : '';
+
+    return getAllAttendanceRows().filter((registro) => {
+        const coincideFecha = !fecha || normalizeAttendanceDateKey(registro.fecha) === fecha;
+        return coincideFecha;
+    });
+}
+
+function normalizeDateInput(value) {
+    return String(value || '').trim();
+}
+
+function getLocalDateInputValue(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function normalizeDateValue(value) {
+    return normalizeAttendanceDateKey(value);
+}
+
+function buildAttendanceWorkSummaries(rows) {
+    const grouped = new Map();
+
+    rows.forEach((registro, index) => {
+        const tipoRegistro = String(registro.tipo_registro || 'EMPLEADO').toUpperCase();
+        if (tipoRegistro !== 'EMPLEADO') {
+            return;
+        }
+
+        const dateKey = normalizeAttendanceDateKey(registro.fecha);
+        const parsedDateTime = parseAttendanceDateTime(registro.fecha, registro.hora);
+        const cedula = String(registro.cedula || '').trim().toUpperCase();
+
+        if (!dateKey || !parsedDateTime || !cedula) {
+            return;
+        }
+
+        const groupKey = `${dateKey}|${cedula}`;
+        if (!grouped.has(groupKey)) {
+            grouped.set(groupKey, []);
+        }
+
+        grouped.get(groupKey).push({ registro, parsedDateTime, index });
+    });
+
+    const summaries = new Map();
+
+    grouped.forEach((items, groupKey) => {
+        items.sort((left, right) => left.parsedDateTime - right.parsedDateTime || left.index - right.index);
+
+        let totalMs = 0;
+        let openEntry = null;
+        let firstEntry = null;
+        let lastExit = null;
+        const scheduleStart = buildDateWithTime(items[0].parsedDateTime, 8, 0, 0);
+        const scheduleEnd = buildDateWithTime(items[0].parsedDateTime, 17, 0, 0);
+
+        items.forEach(({ registro, parsedDateTime }) => {
+            const tipo = String(registro.tipo || '').toUpperCase();
+
+            if (tipo === 'ENTRADA') {
+                if (!firstEntry) {
+                    firstEntry = parsedDateTime;
+                }
+
+                if (!openEntry) {
+                    openEntry = parsedDateTime;
+                }
+                return;
+            }
+
+            if (tipo === 'SALIDA' && openEntry) {
+                totalMs += Math.max(0, parsedDateTime - openEntry);
+                lastExit = parsedDateTime;
+                openEntry = null;
+            }
+        });
+
+        if (openEntry) {
+            totalMs += Math.max(0, scheduleEnd - openEntry);
+        }
+
+        const tardeMs = firstEntry ? Math.max(0, firstEntry - scheduleStart) : null;
+        // Las horas extra se cuentan solo despues de cumplir la jornada obligatoria:
+        // max(17:00, hora de entrada + 8h).
+        const requiredHoursEnd = firstEntry ? new Date(firstEntry.getTime() + (8 * 60 * 60 * 1000)) : null;
+        const overtimeStart = requiredHoursEnd
+            ? new Date(Math.max(scheduleEnd.getTime(), requiredHoursEnd.getTime()))
+            : scheduleEnd;
+        const horasExtraMs = lastExit ? Math.max(0, lastExit - overtimeStart) : 0;
+
+        summaries.set(groupKey, {
+            horasTrabajadas: formatDuration(totalMs),
+            tiempoTarde: tardeMs === null ? 'No aplica' : formatDuration(tardeMs),
+            horasExtra: formatDuration(horasExtraMs)
+        });
+    });
+
+    return summaries;
+}
+
+function resolveAttendanceEmployeeDetails(registro) {
+    const tipoRegistro = String(registro.tipo_registro || 'EMPLEADO').toUpperCase();
+
+    if (tipoRegistro === 'EMPLEADO') {
+        const empleado = state.empleados.find(
+            (emp) => String(emp.cedula || '').toUpperCase() === String(registro.cedula || '').toUpperCase()
+                || String(emp.carnet || '').toUpperCase() === String(registro.carnet || '').toUpperCase()
+        );
+
+        if (empleado) {
+            return {
+                nombre: empleado.nombre || '-',
+                departamento: empleado.departamento || '-'
+            };
+        }
+    }
+
+    if (String(registro.persona_buscada_nombre || '').trim()) {
+        return {
+            nombre: registro.persona_buscada_nombre || '-',
+            departamento: registro.departamento_buscado || '-'
+        };
+    }
+
+    return {
+        nombre: '-',
+        departamento: '-'
+    };
+}
+
+function getAttendanceWorkSummary(registro, summaries) {
+    const tipoRegistro = String(registro.tipo_registro || 'EMPLEADO').toUpperCase();
+
+    if (tipoRegistro === 'INVITADO') {
+        return {
+            horasTrabajadas: 'No aplica',
+            tiempoTarde: 'No aplica',
+            horasExtra: 'No aplica'
+        };
+    }
+
+    const dateKey = normalizeAttendanceDateKey(registro.fecha);
+    const cedula = String(registro.cedula || '').trim().toUpperCase();
+    const summary = summaries.get(`${dateKey}|${cedula}`);
+
+    if (summary) {
+        return summary;
+    }
+
+    return {
+        horasTrabajadas: '--',
+        tiempoTarde: '--',
+        horasExtra: '--'
+    };
+}
+
+function normalizeAttendanceDateKey(value) {
+    const raw = String(value || '').trim();
+    if (!raw) {
+        return '';
+    }
+
+    const parts = raw.match(/\d+/g);
+    if (!parts || parts.length < 3) {
+        return raw;
+    }
+
+    if (parts[0].length === 4) {
+        return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+    }
+
+    if (parts[2].length === 4) {
+        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+
+    return raw;
+}
+
+function parseAttendanceDateTime(dateValue, timeValue) {
+    const dateParts = String(dateValue || '').trim().match(/\d+/g);
+    const timeParts = parseAttendanceTimeParts(timeValue);
+
+    if (!dateParts || dateParts.length < 3 || !timeParts) {
+        return null;
+    }
+
+    let year;
+    let month;
+    let day;
+
+    if (dateParts[0].length === 4) {
+        year = Number(dateParts[0]);
+        month = Number(dateParts[1]);
+        day = Number(dateParts[2]);
+    } else {
+        day = Number(dateParts[0]);
+        month = Number(dateParts[1]);
+        year = Number(dateParts[2]);
+    }
+
+    if (!year || !month || !day) {
+        return null;
+    }
+
+    return new Date(year, month - 1, day, timeParts.hours, timeParts.minutes, timeParts.seconds, 0);
+}
+
+function parseAttendanceTimeParts(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    if (!raw) {
+        return null;
+    }
+
+    const numbers = raw.match(/\d+/g);
+    if (!numbers || numbers.length < 2) {
+        return null;
+    }
+
+    let hours = Number(numbers[0]);
+    const minutes = Number(numbers[1]);
+    const seconds = Number(numbers[2] || 0);
+    const compact = raw.replace(/[^a-z0-9]/g, '');
+    const hasPm = compact.includes('pm');
+    const hasAm = compact.includes('am');
+
+    if (hasPm && hours < 12) {
+        hours += 12;
+    }
+
+    if (hasAm && hours === 12) {
+        hours = 0;
+    }
+
+    return {
+        hours,
+        minutes,
+        seconds
+    };
+}
+
+function buildDateWithTime(referenceDate, hours, minutes, seconds) {
+    const date = new Date(referenceDate);
+    date.setHours(hours, minutes, seconds, 0);
+    return date;
+}
+
+function formatDuration(ms) {
+    const totalMinutes = Math.max(0, Math.round(ms / 60000));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+
+    if (!hours && !minutes) {
+        return '0 min';
+    }
+
+    if (!hours) {
+        return `${minutes} min`;
+    }
+
+    return `${hours} h ${String(minutes).padStart(2, '0')} min`;
 }
 
 function downloadCurrentReport(format) {
     if (!state.reporte.tipo) {
         return;
     }
-
-    if (format === 'excel') {
-        const rows = toRows([state.reporte.columns, ...state.reporte.rows]);
-        const blob = new Blob([rows], { type: 'application/vnd.ms-excel;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${state.reporte.tipo}-${Date.now()}.xls`;
-        a.click();
-        URL.revokeObjectURL(url);
-        return;
-    }
+    // Exportación: solo PDF
 
     const jspdfRef = window.jspdf;
     if (!jspdfRef || !jspdfRef.jsPDF) {
@@ -1096,48 +1991,89 @@ function downloadCurrentReport(format) {
     }
 
     const { jsPDF } = jspdfRef;
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
-    const marginX = 40;
+    const isAttendanceReport = state.reporte.tipo === 'asistencia';
+    // Se mantiene horizontal (landscape) para asistencia
+    const doc = new jsPDF({ orientation: isAttendanceReport ? 'landscape' : 'portrait', unit: 'pt', format: 'a4' });
+    const hasAutoTable = typeof doc.autoTable === 'function';
+    const marginX = isAttendanceReport ? 26 : 40;
     let y = 50;
 
-    doc.setFontSize(14);
-    doc.text(state.reporte.title, marginX, y);
-    y += 22;
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    doc.setFontSize(16);
+    doc.text(state.reporte.title, pageWidth / 2, y, { align: 'center' });
+    y += 28;
     doc.setFontSize(10);
-    doc.text(`Generado: ${new Date().toLocaleString('es-VE')}`, marginX, y);
-    y += 18;
+    doc.text(`Generado: ${new Date().toLocaleString('es-VE')}`, pageWidth / 2, y + 10, { align: 'center' });
+    y += 22;
 
-    const pdfRows = [state.reporte.columns, ...state.reporte.rows];
-    pdfRows.forEach((row, index) => {
-        const line = row.join(' | ');
-        const wrapped = doc.splitTextToSize(line, 520);
-
-        if (y > 780) {
-            doc.addPage();
-            y = 50;
+    if (!hasAutoTable) {
+        const tbody = document.getElementById('reporte-preview-body');
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="${state.reporte.columns.length}">No se pudo cargar el plugin de tablas para PDF. Verifica tu conexion a internet.</td></tr>`;
         }
+        return;
+    }
 
-        if (index === 0) {
-            doc.setFont(undefined, 'bold');
-        } else {
-            doc.setFont(undefined, 'normal');
+    // --- TABLA PRINCIPAL DEL REPORTE ---
+    doc.autoTable({
+        head: [state.reporte.columns],
+        body: state.reporte.rows,
+        startY: y,
+        margin: { left: marginX, right: marginX },
+        horizontalPageBreak: true, // <-- ESTO EVITA QUE SE CRUCEN LOS DATOS
+        horizontalPageBreakRepeat: 0,
+        styles: {
+            fontSize: isAttendanceReport ? 6.5 : 8, // Letra un poquito más pequeña para que rinda más
+            cellPadding: isAttendanceReport ? 3 : 4,
+            overflow: 'linebreak'
+        },
+        headStyles: {
+            fillColor: [23, 63, 115],
+            textColor: [255, 255, 255]
         }
-
-        doc.text(wrapped, marginX, y);
-        y += 14 * wrapped.length;
+        // Eliminé los columnStyles con anchos fijos que tenías, 
+        // dejar que jsPDF lo calcule automáticamente es mucho mejor cuando usas horizontalPageBreak.
     });
+
+    // --- TABLA DE RESUMEN (Si aplica) ---
+    if (state.reporte.tipo === 'asistencia' && Array.isArray(state.reporte.summaryRows) && state.reporte.summaryRows.length) {
+        const lastY = doc.lastAutoTable && typeof doc.lastAutoTable.finalY === 'number'
+            ? doc.lastAutoTable.finalY
+            : y;
+        const startY = lastY + 24 > 760 ? 50 : lastY + 24;
+
+        if (startY === 50) {
+            doc.addPage();
+        }
+
+        doc.setFontSize(12);
+        doc.text('Resumen total por empleado', marginX, startY - 8);
+
+        doc.autoTable({
+            head: [state.reporte.summaryColumns || []],
+            body: state.reporte.summaryRows,
+            startY,
+            margin: { left: marginX, right: marginX },
+            horizontalPageBreak: true, // <-- También aquí por si acaso
+            horizontalPageBreakRepeat: 0,
+            styles: {
+                fontSize: isAttendanceReport ? 6.8 : 8,
+                cellPadding: isAttendanceReport ? 3 : 4,
+                overflow: 'linebreak'
+            },
+            headStyles: {
+                fillColor: [42, 107, 200],
+                textColor: [255, 255, 255]
+            }
+        });
+    }
 
     doc.save(`${state.reporte.tipo}-${Date.now()}.pdf`);
 }
 
 function setReportDownloadState(enabled) {
-    const btnExcel = document.getElementById('btn-descargar-excel');
     const btnPdf = document.getElementById('btn-descargar-pdf');
-
-    if (btnExcel) {
-        btnExcel.disabled = !enabled;
-    }
-
     if (btnPdf) {
         btnPdf.disabled = !enabled;
     }
@@ -1150,6 +2086,10 @@ function syncReportPreviewEmptyState() {
 
     const thead = document.getElementById('reporte-preview-head');
     const tbody = document.getElementById('reporte-preview-body');
+    const resumenShell = document.getElementById('reporte-resumen-shell');
+    const resumenHead = document.getElementById('reporte-resumen-head');
+    const resumenBody = document.getElementById('reporte-resumen-body');
+    const resumenMeta = document.getElementById('reporte-resumen-meta');
 
     setReportDownloadState(false);
 
@@ -1160,6 +2100,66 @@ function syncReportPreviewEmptyState() {
     if (tbody) {
         tbody.innerHTML = '<tr><td>Selecciona un reporte para ver la vista previa.</td></tr>';
     }
+
+    if (resumenShell) {
+        resumenShell.classList.add('hidden');
+    }
+
+    if (resumenHead) {
+        resumenHead.innerHTML = '';
+    }
+
+    if (resumenBody) {
+        resumenBody.innerHTML = '';
+    }
+
+    if (resumenMeta) {
+        resumenMeta.textContent = '0 empleados';
+    }
+}
+
+function buildAttendanceEmployeeSummaryRows(attendanceRows, summaryIndex) {
+    const grouped = new Map();
+
+    attendanceRows.forEach((registro) => {
+        const tipoRegistro = String(registro.tipo_registro || 'EMPLEADO').toUpperCase();
+        if (tipoRegistro !== 'EMPLEADO') {
+            return;
+        }
+
+        const cedula = String(registro.cedula || '').trim();
+        const dateKey = normalizeAttendanceDateKey(registro.fecha);
+        if (!cedula || !dateKey) {
+            return;
+        }
+
+        const key = `${dateKey}|${cedula.toUpperCase()}`;
+        if (!grouped.has(key)) {
+            grouped.set(key, {
+                cedula,
+                marcaciones: 0
+            });
+        }
+
+        grouped.get(key).marcaciones += 1;
+    });
+
+    return [...grouped.entries()]
+        .map(([key, data]) => {
+            const summary = summaryIndex.get(key);
+            const empleado = state.empleados.find((emp) => String(emp.cedula || '').toUpperCase() === String(data.cedula || '').toUpperCase());
+            const nombre = empleado?.nombre || `Empleado ${data.cedula}`;
+
+            return [
+                nombre,
+                data.cedula,
+                String(data.marcaciones),
+                summary?.horasTrabajadas || '--',
+                summary?.tiempoTarde || '--',
+                summary?.horasExtra || '--'
+            ];
+        })
+        .sort((a, b) => String(a[0]).localeCompare(String(b[0]), 'es'));
 }
 
 function toRows(data) {
@@ -1214,7 +2214,7 @@ function formatTime(date) {
 }
 
 function validarEmpleado(empleado) {
-    if (![empleado.nombre, empleado.cedula, empleado.carnet, empleado.departamento, empleado.cargo].every(Boolean)) {
+    if (![empleado.nombre, empleado.cedula, empleado.carnet, empleado.departamento, empleado.cargo, empleado.estado].every(Boolean)) {
         return { ok: false, message: 'Completa todos los campos requeridos.' };
     }
 
@@ -1240,9 +2240,17 @@ function validarEmpleado(empleado) {
 function buildLocalMetrics() {
     const hoy = formatDate(new Date());
     const marcacionesHoy = getActiveAttendanceRows().filter((registro) => registro.fecha === hoy);
+    const empleadosVacaciones = state.empleados.filter(
+        (empleado) => String(empleado.estado || 'ACTIVO').toUpperCase() === 'VACACIONES'
+    ).length;
+    const empleadosSuspendidos = state.empleados.filter(
+        (empleado) => String(empleado.estado || 'ACTIVO').toUpperCase() === 'SUSPENDIDO'
+    ).length;
 
     return {
         personal_activo: state.empleados.length,
+        personal_vacaciones: empleadosVacaciones,
+        personal_suspendido: empleadosSuspendidos,
         entradas_hoy: marcacionesHoy.filter((registro) => registro.tipo === 'ENTRADA').length,
         salidas_hoy: marcacionesHoy.filter((registro) => registro.tipo === 'SALIDA').length,
         marcaciones_hoy: marcacionesHoy.length
@@ -1295,6 +2303,33 @@ function updateGuestFieldsVisibility() {
             personaInput.value = '';
         }
     }
+}
+
+function updateAttendanceEmployeeInfo() {
+    const identificadorInput = document.getElementById('asistencia-identificador');
+    const empleadoInfo = document.getElementById('asistencia-empleado-info');
+    const empleadoNombre = document.getElementById('asistencia-empleado-nombre');
+    const empleadoDepartamento = document.getElementById('asistencia-empleado-departamento');
+
+    if (!identificadorInput || !empleadoInfo || !empleadoNombre || !empleadoDepartamento) {
+        return;
+    }
+
+    const identificador = identificadorInput.value.trim().toUpperCase();
+    const empleadoPorCarnet = state.empleados.find((emp) => String(emp.carnet || '').toUpperCase() === identificador);
+    const empleadoPorCedula = state.empleados.find((emp) => String(emp.cedula || '').toUpperCase() === identificador);
+    const empleado = empleadoPorCarnet || empleadoPorCedula;
+
+    if (!identificador || !empleado) {
+        empleadoInfo.classList.add('hidden');
+        empleadoNombre.textContent = '-';
+        empleadoDepartamento.textContent = '-';
+        return;
+    }
+
+    empleadoNombre.textContent = empleado.nombre || '-';
+    empleadoDepartamento.textContent = empleado.departamento || '-';
+    empleadoInfo.classList.remove('hidden');
 }
 
 function fillGuestPersonSelect() {

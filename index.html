@@ -13,7 +13,7 @@
 
     <header id="app-header" class="topbar hidden">
         <div class="brand">
-            <img src="imagen.png" alt="Logo CORPOELEC" class="brand-logo">
+            <img src="image.png" alt="Logo CORPOELEC" class="brand-logo">
             <div>
                 <h1>SCA CORPOELEC</h1>
                 <p>Sistema de Control de Acceso</p>
@@ -63,6 +63,58 @@
                 <p>Indicadores en tiempo real de la sede activa</p>
             </div>
             <div id="metricas-dashboard" class="metric-grid"></div>
+            <section class="dashboard-focus">
+                <div class="dashboard-focus-head">
+                    <div>
+                        <h3>Entradas del dia</h3>
+                        <p>Distribucion por carnet, cedula e invitados para la fecha seleccionada.</p>
+                    </div>
+                    <label class="field dashboard-date-field">
+                        <span>Fecha</span>
+                        <input id="dashboard-fecha" type="date">
+                    </label>
+                </div>
+                <div class="dashboard-filter-row">
+                    <label class="field dashboard-filter-field">
+                        <span>Empleado</span>
+                        <select id="dashboard-filtro-empleado"></select>
+                    </label>
+                    <label class="field dashboard-filter-field">
+                        <span>Departamento</span>
+                        <select id="dashboard-filtro-departamento"></select>
+                    </label>
+                </div>
+                <div class="dashboard-focus-grid">
+                    <article class="dashboard-card dashboard-donut-card">
+                        <div id="dashboard-donut" class="dashboard-donut"></div>
+                    </article>
+                    <article class="dashboard-card dashboard-summary-card">
+                        <div id="dashboard-entry-summary" class="dashboard-summary-list"></div>
+                    </article>
+                </div>
+            </section>
+            <section class="dashboard-early-grid">
+                <article class="dashboard-card dashboard-early-card">
+                    <div class="dashboard-early-head">
+                        <div>
+                            <h3>Tempranas por empleado</h3>
+                            <p>Porcentaje de entradas antes de las 08:00 entre los registros filtrados.</p>
+                        </div>
+                    </div>
+                    <div id="dashboard-early-employee" class="dashboard-donut"></div>
+                    <p id="dashboard-early-employee-meta" class="dashboard-donut-caption"></p>
+                </article>
+                <article class="dashboard-card dashboard-early-card">
+                    <div class="dashboard-early-head">
+                        <div>
+                            <h3>Tempranas por departamento</h3>
+                            <p>Comparativo de llegadas tempranas en el departamento seleccionado.</p>
+                        </div>
+                    </div>
+                    <div id="dashboard-early-department" class="dashboard-donut"></div>
+                    <p id="dashboard-early-department-meta" class="dashboard-donut-caption"></p>
+                </article>
+            </section>
             <section class="dashboard-extra">
                 <article class="dashboard-card dashboard-card-wide">
                     <h3>Tendencia ultimos 7 dias</h3>
@@ -109,7 +161,15 @@
                 </label>
                 <label class="field">
                     <span>Cargo</span>
-                    <input name="cargo" type="text" required>
+                    <select name="cargo" id="cargo-select" required></select>
+                </label>
+                <label class="field">
+                    <span>Estado</span>
+                    <select name="estado" id="estado-select" required>
+                        <option value="ACTIVO">Activo</option>
+                        <option value="VACACIONES">Vacaciones</option>
+                        <option value="SUSPENDIDO">Suspendido</option>
+                    </select>
                 </label>
                 <div class="report-actions">
                     <button id="btn-guardar-empleado" class="btn btn-primary" type="submit">Guardar</button>
@@ -121,7 +181,33 @@
             <div class="table-card">
                 <div class="table-head">
                     <h3>Listado de empleados</h3>
-                    <button id="btn-limpiar-empleados" class="btn btn-ghost" type="button">Limpiar</button>
+                    <div style="display:flex; gap:10px; align-items:end; flex-wrap:wrap; justify-content:flex-end">
+                        <label class="field" style="margin:0; min-width:180px">
+                            <span style="font-size:0.82rem; color:#415066; display:block">Filtrar nombre</span>
+                            <input id="filtro-nombre-empleados" type="text" placeholder="Nombre..."
+                                style="padding:8px 10px; border-radius:8px; border:1px solid #dbe6f6">
+                        </label>
+                        <label class="field" style="margin:0; min-width:190px">
+                            <span style="font-size:0.82rem; color:#415066; display:block">Filtrar departamento</span>
+                            <select id="filtro-departamento-empleados"
+                                style="padding:8px 10px; border-radius:8px; border:1px solid #dbe6f6">
+                                <option value="">Todos</option>
+                            </select>
+                        </label>
+                        <label class="field" style="margin:0">
+                            <span style="font-size:0.82rem; color:#415066; display:block">Filtrar estado</span>
+                            <select id="filtro-estado-empleados"
+                                style="padding:8px 10px; border-radius:8px; border:1px solid #dbe6f6">
+                                <option value="">Todos</option>
+                                <option value="ACTIVO">Activo</option>
+                                <option value="VACACIONES">Vacaciones</option>
+                                <option value="SUSPENDIDO">Suspendido</option>
+                            </select>
+                        </label>
+                        <button id="btn-limpiar-filtros-empleados" class="btn btn-ghost" type="button">Limpiar
+                            filtros</button>
+                        <button id="btn-limpiar-empleados" class="btn btn-danger" type="button">Limpiar listado</button>
+                    </div>
                 </div>
                 <div class="table-wrap">
                     <table>
@@ -132,6 +218,7 @@
                                 <th>Nombre</th>
                                 <th>Departamento</th>
                                 <th>Cargo</th>
+                                <th>Estado</th>
                                 <th>Acciones</th>
                             </tr>
                         </thead>
@@ -154,6 +241,19 @@
                     <input id="asistencia-identificador" type="text"
                         placeholder="Carnet para empleado / Cedula para invitado" required>
                 </label>
+                <div id="asistencia-empleado-info" class="field field-wide hidden">
+                    <span>Empleado identificado</span>
+                    <div class="attendance-info-grid">
+                        <div class="attendance-info-card">
+                            <small>Nombre</small>
+                            <strong id="asistencia-empleado-nombre">-</strong>
+                        </div>
+                        <div class="attendance-info-card">
+                            <small>Departamento</small>
+                            <strong id="asistencia-empleado-departamento">-</strong>
+                        </div>
+                    </div>
+                </div>
                 <div id="asistencia-invitado-fields" class="hidden">
                     <label class="field field-wide">
                         <span>Departamento que busca el invitado</span>
@@ -189,6 +289,8 @@
                             <th>Fecha</th>
                             <th>Hora</th>
                             <th>Registro</th>
+                            <th>Empleado</th>
+                            <th>Departamento empleado</th>
                             <th>Cedula</th>
                             <th>Carnet</th>
                             <th>Medio</th>
@@ -223,6 +325,8 @@
                             <th>Fecha</th>
                             <th>Hora</th>
                             <th>Registro</th>
+                            <th>Empleado</th>
+                            <th>Departamento empleado</th>
                             <th>Cedula</th>
                             <th>Carnet</th>
                             <th>Medio</th>
@@ -230,6 +334,9 @@
                             <th>Observacion</th>
                             <th>Departamento buscado</th>
                             <th>Persona buscada</th>
+                            <th>Horas trabajadas</th>
+                            <th>Tardanza</th>
+                            <th>Horas extra</th>
                             <th>Archivado</th>
                         </tr>
                     </thead>
@@ -248,11 +355,25 @@
                 </div>
                 <div class="report-badges">
                     <span class="badge badge-blue">Vista previa</span>
-                    <span class="badge badge-green">Excel</span>
                     <span class="badge badge-red">PDF</span>
                 </div>
             </div>
             <div class="report-toolbar">
+                <div class="report-filters">
+                    <label class="field">
+                        <span>Fecha del reporte</span>
+                        <input id="reporte-fecha-asistencia" type="date">
+                    </label>
+                    <label class="field">
+                        <span>Tipo de marcación</span>
+                        <select id="reporte-tipo-asistencia">
+                            <option value="TODOS">Entradas y salidas</option>
+                            <option value="ENTRADA">Solo entradas</option>
+                            <option value="SALIDA">Solo salidas</option>
+                        </select>
+                    </label>
+                    <button id="btn-aplicar-filtro-reporte" class="btn btn-ghost" type="button">Aplicar filtro</button>
+                </div>
                 <div class="report-switches">
                     <button id="btn-previa-empleados" class="btn btn-primary" type="button">Vista previa
                         empleados</button>
@@ -260,8 +381,6 @@
                         asistencia</button>
                 </div>
                 <div class="report-actions">
-                    <button id="btn-descargar-excel" class="btn btn-excel" type="button" disabled>Descargar
-                        Excel</button>
                     <button id="btn-descargar-pdf" class="btn btn-pdf" type="button" disabled>Descargar PDF</button>
                 </div>
             </div>
@@ -295,12 +414,28 @@
                     </table>
                 </div>
             </div>
+            <div id="reporte-resumen-shell" class="report-preview-shell hidden">
+                <div class="report-preview-head">
+                    <div>
+                        <h3>Resumen total por empleado</h3>
+                        <p>Consolidado de horas trabajadas, tardanza y horas extra para el reporte activo.</p>
+                    </div>
+                    <small id="reporte-resumen-meta">0 empleados</small>
+                </div>
+                <div class="table-wrap report-table-wrap">
+                    <table class="report-table">
+                        <thead id="reporte-resumen-head"></thead>
+                        <tbody id="reporte-resumen-body"></tbody>
+                    </table>
+                </div>
+            </div>
         </article>
     </template>
 
     <noscript>Este sistema requiere JavaScript para funcionar.</noscript>
 
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
     <script src="app.js"></script>
 </body>
 

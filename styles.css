@@ -136,9 +136,9 @@ body {
 }
 
 .layout {
-    max-width: 1180px;
+    max-width: 1380px;
     margin: 20px auto 30px;
-    padding: 0 18px;
+    padding: 0 12px;
 }
 
 .screen {
@@ -304,15 +304,7 @@ textarea:focus {
     color: var(--blue-700);
 }
 
-.btn-excel {
-    background: #1d6f42;
-    color: var(--white);
-    border: 1px solid #15562f;
-}
-
-.btn-excel:hover {
-    background: #185d38;
-}
+/* Estilos de exportación simplificados */
 
 .btn-pdf {
     background: var(--white);
@@ -361,6 +353,192 @@ textarea:focus {
     background: #f7faff;
     border: 1px solid #d9e6f8;
     padding: 12px;
+}
+
+.dashboard-focus {
+    margin-top: 18px;
+    border-radius: 18px;
+    background: linear-gradient(180deg, #ffffff, #f6f9fe);
+    border: 1px solid #dbe6f6;
+    padding: 14px;
+}
+
+.dashboard-focus-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: end;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.dashboard-focus-head h3 {
+    margin: 0;
+    font-family: 'Sora', sans-serif;
+    font-size: 1.05rem;
+}
+
+.dashboard-focus-head p {
+    margin: 4px 0 0;
+    color: var(--text-700);
+    font-size: 0.9rem;
+}
+
+.dashboard-date-field {
+    min-width: 220px;
+}
+
+.dashboard-focus-grid {
+    display: grid;
+    grid-template-columns: 1.15fr 0.85fr;
+    gap: 14px;
+    align-items: stretch;
+}
+
+.dashboard-filter-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.dashboard-filter-field select {
+    width: 100%;
+}
+
+.dashboard-early-grid {
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(280px, 1fr));
+    gap: 14px;
+}
+
+.dashboard-early-card {
+    min-height: 320px;
+}
+
+.dashboard-early-head h3 {
+    margin: 0;
+    font-family: 'Sora', sans-serif;
+    font-size: 1.02rem;
+}
+
+.dashboard-early-head p {
+    margin: 4px 0 0;
+    color: var(--text-700);
+    font-size: 0.88rem;
+}
+
+.dashboard-donut-shell-early {
+    width: min(280px, 100%);
+}
+
+.dashboard-donut-caption {
+    margin: 10px 0 0;
+    color: var(--text-700);
+    font-size: 0.88rem;
+    line-height: 1.45;
+}
+
+.dashboard-donut-card,
+.dashboard-summary-card {
+    min-height: 280px;
+}
+
+.dashboard-donut {
+    height: 100%;
+    display: grid;
+    place-items: center;
+}
+
+.dashboard-donut-shell {
+    width: min(320px, 100%);
+    aspect-ratio: 1;
+    border-radius: 50%;
+    padding: 18px;
+    position: relative;
+    display: grid;
+    place-items: center;
+    background: conic-gradient(var(--segments));
+    box-shadow: inset 0 0 0 1px #dbe6f6;
+}
+
+.dashboard-donut-hole {
+    width: 58%;
+    height: 58%;
+    border-radius: 50%;
+    background: #fff;
+    display: grid;
+    place-items: center;
+    text-align: center;
+    box-shadow: 0 4px 14px rgba(18, 48, 86, 0.08);
+    padding: 14px;
+}
+
+.dashboard-donut-hole strong {
+    display: block;
+    font-family: 'Sora', sans-serif;
+    font-size: 1.8rem;
+    color: var(--blue-700);
+    line-height: 1;
+}
+
+.dashboard-donut-hole span {
+    display: block;
+    margin-top: 4px;
+    color: var(--text-700);
+    font-size: 0.86rem;
+}
+
+.dashboard-summary-list {
+    display: grid;
+    gap: 10px;
+    align-content: start;
+}
+
+.dashboard-summary-item {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid #dbe6f6;
+    background: #fff;
+}
+
+.dashboard-summary-item strong {
+    display: block;
+    font-size: 0.95rem;
+}
+
+.dashboard-summary-item small {
+    color: var(--text-700);
+}
+
+.dashboard-summary-pill {
+    min-width: 80px;
+    padding: 7px 10px;
+    border-radius: 999px;
+    text-align: center;
+    font-weight: 700;
+    color: #fff;
+}
+
+.dashboard-summary-pill.carnet {
+    background: #177f4b;
+}
+
+.dashboard-summary-pill.cedula {
+    background: #2a6bc8;
+}
+
+.dashboard-summary-pill.invitado {
+    background: #d68a00;
+}
+
+.dashboard-summary-pill.total {
+    background: #173f73;
 }
 
 .dashboard-card-wide {
@@ -590,7 +768,7 @@ textarea:focus {
 .split {
     display: grid;
     gap: 16px;
-    grid-template-columns: 380px 1fr;
+    grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
 }
 
 .table-card {
@@ -619,15 +797,112 @@ textarea:focus {
 
 table {
     width: 100%;
+    min-width: 0;
     border-collapse: collapse;
+    table-layout: fixed;
 }
 
 th,
 td {
     text-align: left;
     border-bottom: 1px solid #dae5f4;
-    padding: 10px 8px;
-    font-size: 0.93rem;
+    padding: 9px 10px;
+    font-size: 0.88rem;
+    line-height: 1.28;
+    white-space: normal;
+    vertical-align: top;
+}
+
+/* Employee table: keep each cell on one line, allow small horizontal scroll */
+.table-card .table-wrap {
+    padding-right: 6px;
+    overflow-x: hidden
+}
+
+.table-card .table-wrap table {
+    min-width: 100%
+}
+
+.table-card .table-wrap table td,
+.table-card .table-wrap table th {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap
+}
+
+.table-card .table-wrap table th:nth-child(1),
+.table-card .table-wrap table td:nth-child(1) {
+    width: 11%
+}
+
+.table-card .table-wrap table th:nth-child(2),
+.table-card .table-wrap table td:nth-child(2) {
+    width: 11%
+}
+
+.table-card .table-wrap table th:nth-child(3),
+.table-card .table-wrap table td:nth-child(3) {
+    width: 20%
+}
+
+.table-card .table-wrap table th:nth-child(4),
+.table-card .table-wrap table td:nth-child(4) {
+    width: 20%
+}
+
+.table-card .table-wrap table th:nth-child(5),
+.table-card .table-wrap table td:nth-child(5) {
+    width: 11%
+}
+
+.table-card .table-wrap table th:nth-child(6),
+.table-card .table-wrap table td:nth-child(6) {
+    width: 13%
+}
+
+/* Estado column: centered and without clipping of badge */
+.table-card .table-wrap table th:nth-child(6),
+.table-card .table-wrap table td:nth-child(6) {
+    text-align: center;
+    overflow: visible;
+    text-overflow: clip;
+}
+
+.table-card .table-wrap table th:nth-child(7),
+.table-card .table-wrap table td:nth-child(7) {
+    width: 14%
+}
+
+.table-card .table-wrap table th,
+.table-card .table-wrap table td {
+    padding: 6px 8px;
+    font-size: 0.86rem
+}
+
+.table-card .table-wrap table td .btn {
+    display: block;
+    width: 100%;
+    margin: 0 0 6px;
+    padding: 7px 8px;
+    line-height: 1.1;
+    white-space: normal;
+}
+
+.table-card .table-wrap table td .btn:last-child {
+    margin-bottom: 0;
+}
+
+/* Allow Nombre (column 3) and Departamento (column 4) to wrap into two lines */
+.table-card .table-wrap table td:nth-child(3),
+.table-card .table-wrap table th:nth-child(3),
+.table-card .table-wrap table td:nth-child(4),
+.table-card .table-wrap table th:nth-child(4) {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    line-height: 1.2;
 }
 
 th {
@@ -674,6 +949,32 @@ th {
 
 .field-full {
     grid-column: 1 / -1;
+}
+
+.attendance-info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.attendance-info-card {
+    border: 1px solid #dbe6f6;
+    border-radius: 12px;
+    background: #f7fbff;
+    padding: 10px 12px;
+}
+
+.attendance-info-card small {
+    display: block;
+    color: var(--text-700);
+    margin-bottom: 4px;
+    font-size: 0.78rem;
+}
+
+.attendance-info-card strong {
+    display: block;
+    color: var(--text-900);
+    font-size: 0.96rem;
 }
 
 .report-actions {
@@ -748,6 +1049,38 @@ th {
     color: #d3202f;
 }
 
+.estado-badge {
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.82rem;
+    white-space: nowrap;
+    letter-spacing: 0.01em;
+    min-width: 0;
+}
+
+.estado-activo {
+    background: #2ea44f;
+    color: #fff
+}
+
+.estado-vacaciones {
+    background: #f0b429;
+    color: #111;
+    font-size: 0.78rem;
+    padding: 6px 10px;
+}
+
+.estado-suspendido {
+    background: #f97316;
+    color: #fff;
+    font-size: 0.76rem;
+    padding: 6px 10px;
+}
+
 .report-summary {
     display: grid;
     grid-template-columns: repeat(3, minmax(140px, 1fr));
@@ -802,8 +1135,37 @@ th {
     color: var(--text-700);
 }
 
-.report-table-wrap {
-    max-height: 420px;
+.report-table,
+.archive-table-wrap table {
+    min-width: max-content;
+    /* Permite que la tabla crezca a lo ancho según sus datos */
+    table-layout: auto;
+    /* Deja que las columnas adapten su tamaño al contenido */
+}
+
+.report-table thead th,
+.archive-table-wrap th,
+.archive-table-wrap td {
+    white-space: nowrap;
+    /* Mantiene el texto en una sola línea */
+    /* Se eliminan overflow-wrap y word-break para evitar que los nombres se partan */
+}
+
+.report-table thead th,
+.archive-table-wrap th,
+.archive-table-wrap td {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.report-table th,
+.report-table td,
+.archive-table-wrap th,
+.archive-table-wrap td {
+    font-size: 0.8rem;
+    line-height: 1.18;
+    padding: 7px 8px;
 }
 
 .report-table thead th {
@@ -843,6 +1205,19 @@ th {
     .dashboard-extra,
     .report-summary,
     .archive-summary {
+        grid-template-columns: 1fr;
+    }
+
+    .attendance-info-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .dashboard-focus-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .dashboard-filter-row,
+    .dashboard-early-grid {
         grid-template-columns: 1fr;
     }
 

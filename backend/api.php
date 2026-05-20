@@ -49,9 +49,22 @@ try {
             ]);
         }
 
+        // obtener rol del usuario si existe en la BD
+        $role = 'RRHH';
+        if ($dbUser) {
+            $stmtRole = $pdo->prepare('SELECT rol FROM usuarios WHERE usuario = :usuario LIMIT 1');
+            $stmtRole->execute([':usuario' => $user]);
+            $r = $stmtRole->fetch();
+            if ($r && !empty($r['rol'])) {
+                // normalizar a mayusculas para uso en frontend
+                $role = strtoupper((string) $r['rol']);
+            }
+        }
+
         json_response(200, [
             'ok' => true,
-            'message' => 'Acceso correcto.'
+            'message' => 'Acceso correcto.',
+            'role' => $role
         ]);
     }
 
@@ -65,17 +78,18 @@ try {
 
     if ($method === 'POST' && $action === 'employee_create') {
         $payload = get_json_input();
-        validate_required($payload, ['nombre', 'cedula', 'carnet', 'departamento', 'cargo']);
+        validate_required($payload, ['nombre', 'cedula', 'carnet', 'departamento', 'cargo', 'estado']);
         validate_employee_payload($payload);
 
-        $sql = 'INSERT INTO empleados (cedula, carnet, nombre, departamento, cargo) VALUES (:cedula, :carnet, :nombre, :departamento, :cargo)';
+        $sql = 'INSERT INTO empleados (cedula, carnet, nombre, departamento, cargo, estado) VALUES (:cedula, :carnet, :nombre, :departamento, :cargo, :estado)';
         $stmt = $pdo->prepare($sql);
         $stmt->execute([
             ':cedula' => normalize_text($payload['cedula']),
             ':carnet' => normalize_text($payload['carnet']),
             ':nombre' => normalize_text($payload['nombre']),
             ':departamento' => normalize_text($payload['departamento']),
-            ':cargo' => normalize_text($payload['cargo'])
+            ':cargo' => normalize_text($payload['cargo']),
+            ':estado' => strtoupper(normalize_text($payload['estado']))
         ]);
 
         json_response(201, [
@@ -86,7 +100,7 @@ try {
 
     if ($method === 'POST' && $action === 'employee_update') {
         $payload = get_json_input();
-        validate_required($payload, ['original_cedula', 'nombre', 'cedula', 'carnet', 'departamento', 'cargo']);
+        validate_required($payload, ['original_cedula', 'nombre', 'cedula', 'carnet', 'departamento', 'cargo', 'estado']);
         validate_employee_payload($payload);
 
         $originalCedula = normalize_text($payload['original_cedula']);
@@ -101,7 +115,7 @@ try {
             ]);
         }
 
-        $sql = 'UPDATE empleados SET cedula = :cedula, carnet = :carnet, nombre = :nombre, departamento = :departamento, cargo = :cargo WHERE cedula = :original_cedula';
+        $sql = 'UPDATE empleados SET cedula = :cedula, carnet = :carnet, nombre = :nombre, departamento = :departamento, cargo = :cargo, estado = :estado WHERE cedula = :original_cedula';
         $stmt = $pdo->prepare($sql);
         $stmt->execute([
             ':cedula' => normalize_text($payload['cedula']),
@@ -109,6 +123,7 @@ try {
             ':nombre' => normalize_text($payload['nombre']),
             ':departamento' => normalize_text($payload['departamento']),
             ':cargo' => normalize_text($payload['cargo']),
+            ':estado' => strtoupper(normalize_text($payload['estado'])),
             ':original_cedula' => $originalCedula
         ]);
 
@@ -270,7 +285,7 @@ try {
         'message' => 'Ruta no encontrada.'
     ]);
 } catch (PDOException $exception) {
-    if ($pdo->inTransaction()) {
+    if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
         $pdo->rollBack();
     }
 
@@ -302,7 +317,7 @@ try {
 
 function get_bootstrap_data(PDO $pdo): array
 {
-    $empleados = $pdo->query('SELECT cedula, carnet, nombre, departamento, cargo FROM empleados ORDER BY id DESC')->fetchAll();
+    $empleados = $pdo->query('SELECT cedula, carnet, nombre, departamento, cargo, estado FROM empleados ORDER BY id DESC')->fetchAll();
 
     $asistencias = $pdo->query(
         "SELECT
@@ -343,6 +358,8 @@ function get_bootstrap_data(PDO $pdo): array
     $metricasStmt = $pdo->query(
         "SELECT
             (SELECT COUNT(*) FROM empleados) AS personal_activo,
+            (SELECT COUNT(*) FROM empleados WHERE estado = 'VACACIONES') AS personal_vacaciones,
+            (SELECT COUNT(*) FROM empleados WHERE estado = 'SUSPENDIDO') AS personal_suspendido,
             (SELECT COUNT(*) FROM asistencias WHERE fecha = CURDATE() AND tipo = 'ENTRADA') AS entradas_hoy,
             (SELECT COUNT(*) FROM asistencias WHERE fecha = CURDATE() AND tipo = 'SALIDA') AS salidas_hoy,
             (SELECT COUNT(*) FROM asistencias WHERE fecha = CURDATE()) AS marcaciones_hoy"
@@ -356,6 +373,8 @@ function get_bootstrap_data(PDO $pdo): array
         'asistencias_archivadas' => $asistenciasArchivadas,
         'metricas' => [
             'personal_activo' => (int) $metricas['personal_activo'],
+            'personal_vacaciones' => (int) $metricas['personal_vacaciones'],
+            'personal_suspendido' => (int) $metricas['personal_suspendido'],
             'entradas_hoy' => (int) $metricas['entradas_hoy'],
             'salidas_hoy' => (int) $metricas['salidas_hoy'],
             'marcaciones_hoy' => (int) $metricas['marcaciones_hoy']
